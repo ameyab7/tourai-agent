@@ -18,6 +18,7 @@
 #   poi_type  — which tag category matched: "tourism", "historic", "amenity",
 #               "leisure", "building", "man_made", or "natural"
 
+import asyncio
 import logging
 
 import httpx
@@ -27,7 +28,9 @@ from providers.base import POIProvider, POIProviderError
 logger = logging.getLogger(__name__)
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
-TIMEOUT_SECONDS = 10
+TIMEOUT_SECONDS = 15
+MAX_RETRIES = 3
+RETRY_BACKOFF = [2, 5, 10]  # seconds to wait between retries
 
 QUERY_TEMPLATE = """
 [out:json][timeout:10];
@@ -85,20 +88,42 @@ class OverpassPOIProvider(POIProvider):
         query = QUERY_TEMPLATE.format(lat=lat, lon=lon, radius=int(radius))
         logger.debug("Querying Overpass at (%.6f, %.6f) radius=%dm", lat, lon, radius)
 
-        try:
-            async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as client:
-                response = await client.post(OVERPASS_URL, data={"data": query})
-                response.raise_for_status()
-        except httpx.TimeoutException:
+        response = None
+        last_error: Exception | None = None
+
+        async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as client:
+            for attempt in range(MAX_RETRIES):
+                try:
+                    response = await client.post(OVERPASS_URL, data={"data": query})
+                    response.raise_for_status()
+                    break  # success
+                except httpx.TimeoutException as e:
+                    last_error = e
+                    logger.warning("Overpass timeout (attempt %d/%d)", attempt + 1, MAX_RETRIES)
+                except httpx.ConnectError as e:
+                    last_error = e
+                    logger.warning("Overpass connect error (attempt %d/%d): %s", attempt + 1, MAX_RETRIES, e)
+                except httpx.HTTPStatusError as e:
+                    last_error = e
+                    # Only retry on server errors (5xx); client errors (4xx) are fatal
+                    if e.response.status_code < 500:
+                        raise POIProviderError(
+                            f"Overpass API returned HTTP {e.response.status_code}"
+                        ) from e
+                    logger.warning(
+                        "Overpass HTTP %d (attempt %d/%d)",
+                        e.response.status_code, attempt + 1, MAX_RETRIES,
+                    )
+
+                if attempt < MAX_RETRIES - 1:
+                    wait = RETRY_BACKOFF[attempt]
+                    logger.info("Retrying Overpass in %ds...", wait)
+                    await asyncio.sleep(wait)
+
+        if response is None or not response.is_success:
             raise POIProviderError(
-                f"Overpass API timed out after {TIMEOUT_SECONDS}s for ({lat}, {lon})"
+                f"Overpass API failed after {MAX_RETRIES} attempts for ({lat}, {lon}): {last_error}"
             )
-        except httpx.ConnectError as e:
-            raise POIProviderError(f"Could not connect to Overpass API: {e}") from e
-        except httpx.HTTPStatusError as e:
-            raise POIProviderError(
-                f"Overpass API returned HTTP {e.response.status_code}"
-            ) from e
 
         try:
             elements = response.json().get("elements", [])
