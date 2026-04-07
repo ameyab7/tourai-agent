@@ -18,11 +18,16 @@
 #   poi_type  — which tag category matched: "tourism", "historic", "amenity",
 #               "leisure", "building", "man_made", or "natural"
 
+import logging
+
 import httpx
 
-from providers.base import POIProvider
+from providers.base import POIProvider, POIProviderError
+
+logger = logging.getLogger(__name__)
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+TIMEOUT_SECONDS = 10
 
 QUERY_TEMPLATE = """
 [out:json][timeout:10];
@@ -45,53 +50,76 @@ QUERY_TEMPLATE = """
 out center tags;
 """
 
+# Tag categories in priority order for poi_type resolution
+_POI_TYPE_KEYS = ["tourism", "historic", "amenity", "leisure", "building", "man_made", "natural"]
+
+
+def _validate_inputs(lat: float, lon: float, radius: float) -> None:
+    if not (-90 <= lat <= 90):
+        raise ValueError(f"Latitude must be between -90 and 90, got {lat}")
+    if not (-180 <= lon <= 180):
+        raise ValueError(f"Longitude must be between -180 and 180, got {lon}")
+    if radius <= 0:
+        raise ValueError(f"Radius must be positive, got {radius}")
+
+
+def _extract_coordinates(element: dict) -> tuple[float | None, float | None]:
+    """Extract lat/lon from a node or way element."""
+    if element["type"] == "way":
+        center = element.get("center", {})
+        return center.get("lat"), center.get("lon")
+    return element.get("lat"), element.get("lon")
+
+
+def _resolve_poi_type(tags: dict) -> str:
+    for key in _POI_TYPE_KEYS:
+        if key in tags:
+            return key
+    return "unknown"
+
 
 class OverpassPOIProvider(POIProvider):
     async def search_nearby(self, lat: float, lon: float, radius: float) -> list[dict]:
-        query = QUERY_TEMPLATE.format(lat=lat, lon=lon, radius=radius)
+        _validate_inputs(lat, lon, radius)
 
-        async with httpx.AsyncClient(timeout=10) as client:
-            response = await client.post(OVERPASS_URL, data={"data": query})
-            response.raise_for_status()
+        query = QUERY_TEMPLATE.format(lat=lat, lon=lon, radius=int(radius))
+        logger.debug("Querying Overpass at (%.6f, %.6f) radius=%dm", lat, lon, radius)
 
-        elements = response.json().get("elements", [])
+        try:
+            async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as client:
+                response = await client.post(OVERPASS_URL, data={"data": query})
+                response.raise_for_status()
+        except httpx.TimeoutException:
+            raise POIProviderError(
+                f"Overpass API timed out after {TIMEOUT_SECONDS}s for ({lat}, {lon})"
+            )
+        except httpx.ConnectError as e:
+            raise POIProviderError(f"Could not connect to Overpass API: {e}") from e
+        except httpx.HTTPStatusError as e:
+            raise POIProviderError(
+                f"Overpass API returned HTTP {e.response.status_code}"
+            ) from e
+
+        try:
+            elements = response.json().get("elements", [])
+        except Exception as e:
+            raise POIProviderError(f"Failed to parse Overpass response as JSON: {e}") from e
+
         pois = []
+        skipped = 0
 
         for el in elements:
             tags = el.get("tags", {})
             name = tags.get("name")
             if not name:
+                skipped += 1
                 continue
 
-            # Determine coordinates (ways use center)
-            if el["type"] == "way":
-                center = el.get("center", {})
-                poi_lat = center.get("lat")
-                poi_lon = center.get("lon")
-            else:
-                poi_lat = el.get("lat")
-                poi_lon = el.get("lon")
-
+            poi_lat, poi_lon = _extract_coordinates(el)
             if poi_lat is None or poi_lon is None:
+                logger.warning("Skipping element %s — missing coordinates", el.get("id"))
+                skipped += 1
                 continue
-
-            # Determine poi_type from matched tag category
-            if "tourism" in tags:
-                poi_type = "tourism"
-            elif "historic" in tags:
-                poi_type = "historic"
-            elif "amenity" in tags:
-                poi_type = "amenity"
-            elif "leisure" in tags:
-                poi_type = "leisure"
-            elif "building" in tags:
-                poi_type = "building"
-            elif "man_made" in tags:
-                poi_type = "man_made"
-            elif "natural" in tags:
-                poi_type = "natural"
-            else:
-                poi_type = "unknown"
 
             pois.append({
                 "id": el["id"],
@@ -99,7 +127,11 @@ class OverpassPOIProvider(POIProvider):
                 "lat": poi_lat,
                 "lon": poi_lon,
                 "tags": tags,
-                "poi_type": poi_type,
+                "poi_type": _resolve_poi_type(tags),
             })
 
+        logger.debug(
+            "Overpass returned %d elements — %d named POIs, %d skipped",
+            len(elements), len(pois), skipped,
+        )
         return pois
