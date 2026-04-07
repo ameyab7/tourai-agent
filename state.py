@@ -19,3 +19,5 @@ class TourGuideState(TypedDict):
     told_pois: set
     last_story_time: datetime | None
     interest_profile: dict
+    search_radius: float
+    audio_filepath: str
