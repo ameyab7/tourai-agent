@@ -1,0 +1,1 @@
+pip install langgraph langchain-google-genai httpx edge-tts python-dotenv
