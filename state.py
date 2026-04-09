@@ -1,23 +1,17 @@
 from __future__ import annotations
 
-from datetime import datetime
-from typing import TypedDict
+from typing import Annotated, TypedDict
+
+from langgraph.graph.message import add_messages
 
 
-class TourGuideState(TypedDict):
+class AgentState(TypedDict):
+    messages: Annotated[list, add_messages]  # full conversation / tool call history
     user_id: str
+    session_id: str
     latitude: float
     longitude: float
     speed_mps: float
     heading: float
-    nearby_pois: list
-    top_poi: dict | None
-    should_speak: bool
-    enriched_context: dict
-    story_text: str
-    audio_bytes: bytes
-    told_pois: set
-    last_story_time: datetime | None
-    interest_profile: dict
-    search_radius: float
-    audio_filepath: str
+    timestamp: str
+    final_output: dict  # action, story_text, audio_bytes, poi_name — or None fields
