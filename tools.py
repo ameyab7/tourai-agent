@@ -1,6 +1,6 @@
 # tools.py
 #
-# All 7 LangGraph ReAct tools for the TourAI agent.
+# All 8 LangGraph ReAct tools for the TourAI agent.
 # Tools are sync functions — async utils are bridged via a thread pool executor
 # so asyncio.run() gets its own event loop per call without conflicting with
 # LangGraph's own event loop.
@@ -45,6 +45,17 @@ def _run(coro):
 _session_stories: list[dict] = []
 
 # ---------------------------------------------------------------------------
+# API usage tracking
+# ---------------------------------------------------------------------------
+
+_api_usage: dict[str, int] = {"overpass": 0}
+
+
+def get_api_usage() -> dict:
+    """Return a snapshot of API call counts for this process session."""
+    return dict(_api_usage)
+
+# ---------------------------------------------------------------------------
 # POI cache — keyed on (grid_cell, frozenset(tags)), TTL = 5 min
 # ---------------------------------------------------------------------------
 
@@ -83,16 +94,145 @@ def _haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> flo
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
+def _point_to_segment_dist_meters(
+    p_lat: float, p_lon: float,
+    a_lat: float, a_lon: float,
+    b_lat: float, b_lon: float,
+) -> float:
+    """Perpendicular distance in meters from point P to line segment AB.
+    Uses flat-earth approximation (valid for distances < 10km).
+    """
+    lat_m = 111320.0
+    lon_m = 111320.0 * math.cos(math.radians((a_lat + b_lat) / 2))
+
+    # Translate so A is origin
+    bx = (b_lon - a_lon) * lon_m
+    by = (b_lat - a_lat) * lat_m
+    px = (p_lon - a_lon) * lon_m
+    py = (p_lat - a_lat) * lat_m
+
+    seg_len_sq = bx * bx + by * by
+    if seg_len_sq < 1e-10:
+        return math.hypot(px, py)
+
+    t = max(0.0, min(1.0, (px * bx + py * by) / seg_len_sq))
+    return math.hypot(px - t * bx, py - t * by)
+
+
+def _bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Compass bearing in degrees (0=N, 90=E, 180=S, 270=W) from point 1 to point 2."""
+    dlon = math.radians(lon2 - lon1)
+    lat1, lat2 = math.radians(lat1), math.radians(lat2)
+    x = math.sin(dlon) * math.cos(lat2)
+    y = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
+    return (math.degrees(math.atan2(x, y)) + 360) % 360
+
+
+def _angle_diff(a: float, b: float) -> float:
+    """Smallest angular difference between two bearings (0-180)."""
+    return min(abs(a - b) % 360, 360 - abs(a - b) % 360)
+
+
+def _parse_tag_filter(tag: str) -> str:
+    """Convert a tag string like 'tourism~museum|attraction' into valid Overpass QL.
+
+    Input formats:
+      'tourism~museum|attraction'  → ["tourism"~"museum|attraction"]
+      'historic~*'                 → ["historic"]   (wildcard = key-existence check)
+      'historic'                   → ["historic"]
+
+    Defensive handling:
+      'historic~*|tourism~museum'  → ["historic"]   (agent concatenated multi-key tags;
+                                      detected by '~' inside pipe-separated parts)
+    """
+    if "~" in tag:
+        key, value_regex = tag.split("~", 1)
+        value_regex = value_regex.strip()
+
+        # '*' / '.*' / '.+' mean "any value" — Overpass regex doesn't accept bare '*'
+        # Use a key-existence filter instead, which is both valid and faster.
+        if value_regex in ("*", ".*", ".+", ""):
+            return f'["{key.strip()}"]'
+
+        # Detect agent concatenating multiple key~value pairs into one string.
+        # e.g. "*|tourism~museum|amenity~restaurant" — each pipe-part contains "~".
+        # This is invalid Overpass QL. Fall back to key-existence for the first key.
+        if any("~" in part for part in value_regex.split("|")):
+            logger.warning(
+                "_parse_tag_filter: concatenated multi-key tag detected '%s' — "
+                "using key-existence check for '%s' only. "
+                "Tags must be separate list items, not joined with '|'.", tag, key.strip()
+            )
+            return f'["{key.strip()}"]'
+
+        return f'["{key.strip()}"~"{value_regex}"]'
+    return f'["{tag.strip()}"]'
+
+
 def _build_custom_query(lat: float, lon: float, radius: int, tags: list[str]) -> str:
     filters = ""
     for tag in tags:
-        filters += f'  node(around:{radius},{lat},{lon})[{tag}];\n'
-        filters += f'  way(around:{radius},{lat},{lon})[{tag}];\n'
+        tag_filter = _parse_tag_filter(tag)
+        filters += f'  node(around:{radius},{lat},{lon}){tag_filter};\n'
+        filters += f'  way(around:{radius},{lat},{lon}){tag_filter};\n'
     return f"""[out:json][timeout:10];
 (
 {filters});
 out center tags;
 """
+
+
+_OVERPASS_URL         = "https://overpass-api.de/api/interpreter"
+_CUSTOM_QUERY_TIMEOUT = 8
+_CUSTOM_MAX_RETRIES   = 3
+_CUSTOM_RETRY_BACKOFF = [2, 5, 10]
+
+
+async def _run_custom_query(query: str) -> list:
+    """Execute a custom Overpass QL query with retry logic on 5xx errors.
+
+    Raises:
+        httpx.HTTPStatusError: immediately on 4xx (bad query syntax)
+        OverpassError: after all retries exhausted on 5xx / timeout
+    """
+    import asyncio as _asyncio
+    from utils.overpass import OverpassError
+
+    last_error: Exception | None = None
+
+    async with httpx.AsyncClient(timeout=_CUSTOM_QUERY_TIMEOUT) as client:
+        for attempt in range(_CUSTOM_MAX_RETRIES):
+            try:
+                resp = await client.post(_OVERPASS_URL, data={"data": query})
+                if resp.status_code == 400:
+                    logger.error("Overpass 400 Bad Request. Query sent:\n%s", query)
+                resp.raise_for_status()
+                return resp.json().get("elements", [])
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code < 500:
+                    raise  # 4xx — bad query, no point retrying
+                last_error = e
+                logger.warning(
+                    "Overpass HTTP %d on custom query (attempt %d/%d)\n"
+                    "  Response body: %s",
+                    e.response.status_code, attempt + 1, _CUSTOM_MAX_RETRIES,
+                    e.response.text[:500],
+                )
+            except httpx.TimeoutException as e:
+                last_error = e
+                logger.warning(
+                    "Overpass timeout on custom query (attempt %d/%d)",
+                    attempt + 1, _CUSTOM_MAX_RETRIES,
+                )
+
+            if attempt < _CUSTOM_MAX_RETRIES - 1:
+                wait = _CUSTOM_RETRY_BACKOFF[attempt]
+                logger.info("Retrying Overpass in %ds...", wait)
+                await _asyncio.sleep(wait)
+
+    raise OverpassError(
+        f"Overpass custom query failed after {_CUSTOM_MAX_RETRIES} attempts: {last_error}"
+    )
 
 
 def _safe_filename(text: str) -> str:
@@ -130,56 +270,77 @@ def search_pois(
 
     try:
         if tags:
-            # Custom tag query via raw Overpass POST
             query = _build_custom_query(latitude, longitude, radius, tags)
 
-            async def _custom_search():
-                async with httpx.AsyncClient(timeout=15) as client:
-                    resp = await client.post(
-                        "https://overpass-api.de/api/interpreter",
-                        data={"data": query},
+            try:
+                _api_usage["overpass"] += 1
+                elements = _run(_run_custom_query(query))
+            except Exception as e:
+                if "400" in str(e):
+                    # Bad custom tags — fall back to default tag set
+                    logger.warning(
+                        "Custom tag query failed with 400 — retrying with default tags. Tags were: %s", tags
                     )
-                    resp.raise_for_status()
-                    return resp.json().get("elements", [])
-
-            elements = _run(_custom_search())
-            pois = []
-            for el in elements:
-                t = el.get("tags", {})
-                name = t.get("name")
-                if not name:
-                    continue
-                if el["type"] == "way":
-                    center = el.get("center", {})
-                    plat, plon = center.get("lat"), center.get("lon")
+                    _api_usage["overpass"] += 1
+                    pois = _run(search_nearby(latitude, longitude, radius))
+                    elements = []  # skip element parsing below; pois already set
                 else:
-                    plat, plon = el.get("lat"), el.get("lon")
-                if plat is None or plon is None:
-                    continue
-                pois.append({"id": el["id"], "name": name, "lat": plat, "lon": plon, "tags": t, "poi_type": "custom"})
+                    raise
+            else:
+                pois = []
+                for el in elements:
+                    t = el.get("tags", {})
+                    name = t.get("name")
+                    if not name:
+                        continue
+                    if el["type"] == "way":
+                        center = el.get("center", {})
+                        plat, plon = center.get("lat"), center.get("lon")
+                    else:
+                        plat, plon = el.get("lat"), el.get("lon")
+                    if plat is None or plon is None:
+                        continue
+                    pois.append({"id": el["id"], "name": name, "lat": plat, "lon": plon, "tags": t, "poi_type": "custom"})
         else:
+            _api_usage["overpass"] += 1
             pois = _run(search_nearby(latitude, longitude, radius))
 
-    except (OverpassError, Exception) as e:
+    except Exception as e:
         return f"ERROR: Could not fetch POIs — {e}"
 
     if not pois:
         result = f"No POIs found within {radius}m of ({latitude:.4f}, {longitude:.4f})."
-        _poi_cache[cache_key] = (now, result)
+        # Cache empty results for only 60s — bad tag syntax can cause false empties,
+        # and we don't want that locking out a retry with correct tags for 5 minutes.
+        _poi_cache[cache_key] = (now - _POI_CACHE_TTL + 60, result)
         return result
 
     lines = [f"Found {len(pois)} POIs within {radius}m of ({latitude:.4f}, {longitude:.4f}):\n"]
+    raw_for_rank: list[dict] = []
+
     for i, poi in enumerate(pois, 1):
         dist = int(_haversine_meters(latitude, longitude, poi["lat"], poi["lon"]))
         tags_summary = {k: v for k, v in poi["tags"].items()
                         if k in ("tourism", "historic", "amenity", "leisure", "building",
-                                 "man_made", "natural", "description", "wikipedia", "wikidata")}
+                                 "man_made", "natural", "description", "wikipedia", "wikidata",
+                                 "addr:street")}
         lines.append(
             f"{i}. {poi['name']}\n"
             f"   id={poi['id']} | type={poi['poi_type']} | distance={dist}m\n"
             f"   coords=({poi['lat']:.5f}, {poi['lon']:.5f})\n"
             f"   tags={json.dumps(tags_summary)}"
         )
+        raw_for_rank.append({
+            "id":   str(poi["id"]),
+            "name": poi["name"],
+            "lat":  poi["lat"],
+            "lon":  poi["lon"],
+            "tags": tags_summary,
+        })
+
+    # Append machine-readable JSON so the agent can pass it directly to rank_pois
+    # without reconstructing coordinates from the human-readable text above.
+    lines.append(f"\nRAW_JSON_FOR_RANK_POIS: {json.dumps(raw_for_rank)}")
 
     result = "\n".join(lines)
     _poi_cache[cache_key] = (now, result)
@@ -364,7 +525,7 @@ def get_user_profile(user_id: str) -> str:
         },
         "preferred_voice":   "en-US-GuyNeural",
         "story_length":      "medium",   # short=60-80w, medium=80-120w, long=120-160w
-        "cooldown_seconds":  90,
+        "cooldown_seconds":  5,
     }
 
     interests_str = "\n".join(
@@ -456,7 +617,159 @@ def synthesize_audio(text: str, voice: str = "en-US-GuyNeural") -> str:
 
 
 # ---------------------------------------------------------------------------
-# Tool 7: log_story
+# Tool 7: rank_pois
+# ---------------------------------------------------------------------------
+
+# Maps OSM tag key-value patterns to interest categories
+_TAG_INTEREST_MAP: list[tuple[str, str, str | None, str]] = [
+    # (tag_key, tag_value_or_wildcard, value_match, interest_category)
+    ("historic",  "*",          None,           "history"),
+    ("tourism",   "museum",     None,           "history"),
+    ("tourism",   "gallery",    None,           "art"),
+    ("tourism",   "artwork",    None,           "art"),
+    ("tourism",   "viewpoint",  None,           "photography"),
+    ("tourism",   "attraction", None,           "history"),
+    ("building",  "cathedral",  None,           "architecture"),
+    ("building",  "church",     None,           "architecture"),
+    ("building",  "chapel",     None,           "architecture"),
+    ("amenity",   "restaurant", None,           "food"),
+    ("amenity",   "cafe",       None,           "food"),
+    ("amenity",   "bar",        None,           "food"),
+    ("amenity",   "theatre",    None,           "local_culture"),
+    ("leisure",   "park",       None,           "nature"),
+    ("leisure",   "garden",     None,           "nature"),
+    ("natural",   "*",          None,           "nature"),
+]
+
+_RICHNESS_TAGS = {
+    "description", "wikipedia", "wikidata", "website", "image",
+    "architect", "start_date", "heritage", "opening_hours",
+}
+
+
+def _score_interest_match(tags: dict, interests: dict) -> tuple[float, str]:
+    """Return (score, matched_category) for a POI's tags vs user interests."""
+    best_score = 0.2   # default — no match
+    best_cat   = "no match"
+
+    for key, value_pattern, _, category in _TAG_INTEREST_MAP:
+        if key not in tags:
+            continue
+        tag_val = tags[key].lower()
+        if value_pattern == "*" or tag_val == value_pattern:
+            # tourism=museum can match both history and art — take the higher weight
+            weight = interests.get(category, 0.0)
+            if weight > best_score:
+                best_score = weight
+                best_cat   = category
+
+    return best_score, best_cat
+
+
+_MIN_SIGNIFICANCE = 0.15  # POIs below this score are not worth mentioning
+
+
+@tool
+def rank_pois(
+    pois_json: str,
+    user_interests_json: str,
+    user_lat: float,
+    user_lon: float,
+    dest_lat: float = -999.0,
+    dest_lon: float = -999.0,
+) -> str:
+    """Score and sort a list of POIs by relevance to the traveler. Call this after search_pois — it scores each POI on interest match, wiki notability, and tag richness, then sorts by distance. When dest_lat/dest_lon are provided, also calculates route_offset_m — how far each POI sits off the straight line to the destination. A low route_offset_m means the POI is directly on the traveler's path; a high value means it's on a different street or behind buildings. Always pass dest_lat/dest_lon from the GPS data when available."""
+    try:
+        pois: list[dict] = json.loads(pois_json)
+        if not isinstance(pois, list):
+            return "ERROR: pois_json must be a JSON array."
+    except json.JSONDecodeError as e:
+        return f"ERROR: Could not parse pois_json — {e}"
+
+    try:
+        interests: dict = json.loads(user_interests_json)
+        if not isinstance(interests, dict):
+            return "ERROR: user_interests_json must be a JSON object."
+    except json.JSONDecodeError as e:
+        return f"ERROR: Could not parse user_interests_json — {e}"
+
+    if not pois:
+        return "No POIs to rank."
+
+    # Normalize interest values if passed as percentages (90 → 0.9)
+    if interests and max(interests.values(), default=0) > 1.0:
+        interests = {k: v / 100.0 for k, v in interests.items()}
+
+    scored: list[dict] = []
+    filtered_out: list[str] = []
+
+    for poi in pois:
+        tags: dict = poi.get("tags", {})
+        poi_lat: float = poi.get("lat", user_lat)
+        poi_lon: float = poi.get("lon", user_lon)
+
+        richness_count = sum(1 for t in _RICHNESS_TAGS if t in tags)
+        tag_richness = min(richness_count / 5.0, 1.0)
+
+        interest_score, matched_cat = _score_interest_match(tags, interests)
+
+        wiki_notability = 1.0 if ("wikipedia" in tags or "wikidata" in tags) else 0.0
+
+        significance = (tag_richness * 0.3) + (interest_score * 0.5) + (wiki_notability * 0.2)
+
+        if significance < _MIN_SIGNIFICANCE:
+            filtered_out.append(poi.get("name", "Unknown"))
+            continue
+
+        dist_m = _haversine_meters(user_lat, user_lon, poi_lat, poi_lon)
+        bearing = _bearing(user_lat, user_lon, poi_lat, poi_lon)
+
+        route_offset_m = None
+        if dest_lat > -999 and dest_lon > -999:
+            route_offset_m = int(_point_to_segment_dist_meters(
+                poi_lat, poi_lon,
+                user_lat, user_lon,
+                dest_lat, dest_lon,
+            ))
+
+        entry = {
+            "name":           poi.get("name", "Unknown"),
+            "id":             poi.get("id", ""),
+            "distance_m":     int(dist_m),
+            "bearing":        round(bearing, 1),
+            "significance":   round(significance, 2),
+            "interest_match": f"{interest_score:.1f} ({matched_cat})",
+            "wiki":           "yes" if wiki_notability else "no",
+        }
+        if route_offset_m is not None:
+            entry["route_offset_m"] = route_offset_m
+
+        scored.append(entry)
+
+    if not scored:
+        return f"No POIs met the minimum significance threshold. Filtered out: {', '.join(filtered_out) or 'all'}."
+
+    # Sort by distance — let the LLM weigh distance against significance
+    scored.sort(key=lambda x: x["distance_m"])
+
+    lines = ["Ranked POIs (closest first):\n"]
+    if filtered_out:
+        lines.append(f"(Below threshold, excluded: {', '.join(filtered_out)})\n")
+    for i, s in enumerate(scored, 1):
+        offset_str = f" | route_offset: {s['route_offset_m']}m" if "route_offset_m" in s else ""
+        lines.append(
+            f"{i}. {s['name']} — {s['distance_m']}m away, bearing {s['bearing']}°"
+            f" | significance: {s['significance']:.2f}"
+            f" | interest: {s['interest_match']}"
+            f" | wiki: {s['wiki']}"
+            f"{offset_str}"
+        )
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Tool 8: log_story
 # ---------------------------------------------------------------------------
 
 @tool
@@ -502,6 +815,7 @@ def log_story(
 
 ALL_TOOLS = [
     search_pois,
+    rank_pois,
     enrich_poi,
     get_weather,
     get_user_profile,

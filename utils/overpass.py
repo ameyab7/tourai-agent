@@ -18,8 +18,11 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-OVERPASS_URL = "https://overpass-api.de/api/interpreter"
-TIMEOUT_SECONDS = 15
+_OVERPASS_MIRRORS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+]
+TIMEOUT_SECONDS = 8
 MAX_RETRIES = 3
 RETRY_BACKOFF = [2, 5, 10]
 
@@ -99,27 +102,32 @@ async def search_nearby(lat: float, lon: float, radius: float) -> list[dict]:
 
     async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as client:
         for attempt in range(MAX_RETRIES):
+            url = _OVERPASS_MIRRORS[attempt % len(_OVERPASS_MIRRORS)]
             try:
-                response = await client.post(OVERPASS_URL, data={"data": query})
+                response = await client.post(url, data={"data": query})
                 response.raise_for_status()
                 break
             except httpx.TimeoutException as e:
                 last_error = e
-                logger.warning("Overpass timeout (attempt %d/%d)", attempt + 1, MAX_RETRIES)
+                logger.warning("Overpass timeout (attempt %d/%d) [%s]", attempt + 1, MAX_RETRIES, url)
             except httpx.ConnectError as e:
                 last_error = e
-                logger.warning("Overpass connect error (attempt %d/%d): %s", attempt + 1, MAX_RETRIES, e)
+                logger.warning("Overpass connect error (attempt %d/%d) [%s]: %s", attempt + 1, MAX_RETRIES, url, e)
             except httpx.HTTPStatusError as e:
                 last_error = e
                 if e.response.status_code < 500:
                     raise OverpassError(
                         f"Overpass API returned HTTP {e.response.status_code}"
                     ) from e
-                logger.warning("Overpass HTTP %d (attempt %d/%d)", e.response.status_code, attempt + 1, MAX_RETRIES)
+                logger.warning(
+                    "Overpass HTTP %d on custom query (attempt %d/%d)\n  Response body: %s",
+                    e.response.status_code, attempt + 1, MAX_RETRIES,
+                    e.response.text[:500],
+                )
 
             if attempt < MAX_RETRIES - 1:
                 wait = RETRY_BACKOFF[attempt]
-                logger.info("Retrying Overpass in %ds...", wait)
+                logger.info("Retrying Overpass in %ds on next mirror...", wait)
                 await asyncio.sleep(wait)
 
     if response is None or not response.is_success:
