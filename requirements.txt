@@ -1,0 +1,22 @@
+# API server
+fastapi
+uvicorn[standard]
+pydantic-settings
+prometheus_client
+
+# HTTP client (overpass, osrm)
+httpx
+
+# AI visibility filter
+groq
+
+# Geospatial math (haversine, bearing, project_endpoint)
+geopy
+geographiclib
+
+# Environment variables
+python-dotenv
+
+# Testing
+pytest
+pytest-asyncio
