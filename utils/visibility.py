@@ -345,6 +345,201 @@ def _is_visible(
 
 
 # ---------------------------------------------------------------------------
+# Size category with reason (used by diagnose_poi)
+# ---------------------------------------------------------------------------
+
+def _size_category_reason(tags: dict, geometry: list[dict]) -> tuple[str, str]:
+    """Return (size, reason_string) explaining which rule determined the size."""
+    # 1. Floor count
+    try:
+        floors = int(tags.get("building:levels", 0))
+        if floors >= 30:
+            return "very_large", f"building:levels={floors} ≥ 30 → very_large (floors)"
+        if floors >= 10:
+            return "large",      f"building:levels={floors} ≥ 10 → large (floors)"
+        if floors >= 4:
+            return "medium",     f"building:levels={floors} ≥ 4 → medium (floors)"
+    except (ValueError, TypeError):
+        pass
+
+    # 2. Explicit height tag
+    h = _parse_height(tags.get("height"))
+    if h is not None:
+        if h >= 100:
+            return "very_large", f"height={tags.get('height')} → {h:.0f}m ≥ 100 → very_large"
+        if h >= 30:
+            return "large",      f"height={tags.get('height')} → {h:.0f}m ≥ 30 → large"
+        if h >= 12:
+            return "medium",     f"height={tags.get('height')} → {h:.0f}m ≥ 12 → medium"
+
+    # 3. Polygon footprint area
+    if geometry:
+        pts = _project_geometry(geometry)
+        area = _polygon_area_m2(pts)
+        if area >= 10_000:
+            return "very_large", f"footprint area {area:.0f} m² ≥ 10 000 → very_large"
+        if area >= 3_000:
+            return "large",      f"footprint area {area:.0f} m² ≥ 3 000 → large"
+        if area >= 500:
+            return "medium",     f"footprint area {area:.0f} m² ≥ 500 → medium"
+
+    # 4. Tag heuristics
+    for key in ("amenity", "building", "leisure", "tourism"):
+        val = tags.get(key, "")
+        if val in _TAG_SIZES:
+            return _TAG_SIZES[val], f"{key}={val} → {_TAG_SIZES[val]} (tag heuristic)"
+
+    # 5. Default
+    return "medium", "no height/floors/footprint/tag match → medium (default)"
+
+
+# ---------------------------------------------------------------------------
+# Public diagnosis API
+# ---------------------------------------------------------------------------
+
+def diagnose_poi(
+    poi:          dict,
+    user_lat:     float,
+    user_lon:     float,
+    user_heading: float,
+    user_street:  str | None = None,
+) -> dict:
+    """Run the full visibility pipeline on a single POI and return a structured trace.
+
+    Returns a dict with every intermediate decision so callers can pinpoint
+    exactly which rule caused a false positive or false negative.
+    """
+    from utils.geoutils import haversine_meters, bearing as _bearing
+
+    tags     = poi.get("tags", {})
+    geometry = poi.get("geometry", [])
+
+    poi_lat = poi.get("lat", user_lat)
+    poi_lon = poi.get("lon", user_lon)
+
+    dist  = haversine_meters(user_lat, user_lon, poi_lat, poi_lon)
+    bear  = _bearing(user_lat, user_lon, poi_lat, poi_lon)
+    angle = (bear - user_heading + 360) % 360
+    if angle > 180:
+        angle = 360 - angle
+
+    size, size_reason = _size_category_reason(tags, geometry)
+
+    # Street / cross-street logic
+    poi_street = tags.get("addr:street", "").strip()
+    if poi_street:
+        same_street  = _streets_match(user_street or "", poi_street)
+        cross_street = not same_street
+        street_info  = (
+            f"addr:street='{poi_street}' vs user street='{user_street}' → "
+            f"{'match' if same_street else 'DIFFERENT STREET'}"
+        )
+    else:
+        same_street  = dist < 100
+        cross_street = False
+        street_info  = (
+            f"no addr:street tag → assumed {'same' if same_street else 'different'} "
+            f"(dist {dist:.1f}m {'<' if dist < 100 else '≥'} 100m threshold)"
+        )
+
+    poi_type = (
+        tags.get("historic") or tags.get("man_made") or
+        tags.get("tourism") or tags.get("amenity") or
+        tags.get("leisure") or tags.get("building") or ""
+    )
+    is_landmark = _is_landmark(poi_type)
+    dist_mult   = 1.5 if is_landmark else 1.0
+
+    aspect_conf = _aspect_confidence_penalty(geometry, angle, bear)
+    in_fov      = angle < 60
+
+    # Determine which rule fires — mirror _is_visible exactly
+    rule = "unknown"
+    rule_description = ""
+
+    if dist < 30 and in_fov:
+        rule = "proximity_override_30m"
+        rule_description = f"distance {dist:.1f}m < 30m and in FOV → always visible"
+    elif dist < 50 and in_fov and size in ("small", "medium"):
+        rule = "proximity_override_50m"
+        rule_description = f"distance {dist:.1f}m < 50m, in FOV, size={size} → always visible"
+    elif cross_street and size == "medium":
+        rule = "cross_street_suppression"
+        rule_description = f"addr:street confirmed different street, size=medium → not visible"
+    elif poi.get("blocked_by") and size in ("small", "medium") and dist > 100:
+        rule = "occlusion"
+        rule_description = (
+            f"blocked by {poi.get('blocked_by')} and size={size} and dist {dist:.1f}m > 100m → not visible"
+        )
+    elif size == "very_large":
+        threshold = (1500 if in_fov else 800) * dist_mult
+        rule = "very_large_in_fov" if in_fov else "very_large_peripheral"
+        rule_description = (
+            f"very_large: threshold {threshold:.0f}m "
+            f"({'in FOV' if in_fov else 'peripheral'}, dist_mult={dist_mult}x), "
+            f"distance {dist:.1f}m → {'visible' if dist < threshold else 'not visible'}"
+        )
+    elif size == "large":
+        threshold = 600 * dist_mult
+        rule = "large"
+        rule_description = (
+            f"large: needs in_fov + dist < {threshold:.0f}m (dist_mult={dist_mult}x), "
+            f"in_fov={in_fov}, distance {dist:.1f}m → "
+            f"{'visible' if in_fov and dist < threshold else 'not visible'}"
+        )
+    elif size == "medium":
+        threshold = 250 * dist_mult
+        rule = "medium"
+        rule_description = (
+            f"medium: needs in_fov + dist < {threshold:.0f}m (dist_mult={dist_mult}x), "
+            f"in_fov={in_fov}, distance {dist:.1f}m → "
+            f"{'visible' if in_fov and dist < threshold else 'not visible'}"
+        )
+    else:  # small
+        rule = "small"
+        rule_description = (
+            f"small: needs in_fov + dist < 80m + same_street, "
+            f"in_fov={in_fov}, distance {dist:.1f}m, same_street={same_street} → "
+            f"{'visible' if in_fov and dist < 80 and same_street else 'not visible'}"
+        )
+
+    # Run the actual filter to get the authoritative answer
+    is_vis, conf = _is_visible(
+        size         = size,
+        distance_m   = dist,
+        angle_deg    = angle,
+        same_street  = same_street,
+        blocked_by   = poi.get("blocked_by", []),
+        poi_type     = poi_type,
+        aspect_conf  = aspect_conf,
+        cross_street = cross_street,
+    )
+
+    return {
+        "poi_id":           poi.get("id"),
+        "poi_name":         poi.get("name"),
+        "distance_m":       round(dist, 1),
+        "bearing_deg":      round(bear, 1),
+        "angle_deg":        round(angle, 1),
+        "in_fov":           in_fov,
+        "size":             size,
+        "size_reason":      size_reason,
+        "poi_type":         poi_type,
+        "is_landmark":      is_landmark,
+        "dist_mult":        dist_mult,
+        "same_street":      same_street,
+        "cross_street":     cross_street,
+        "street_info":      street_info,
+        "aspect_conf":      aspect_conf,
+        "rule":             rule,
+        "rule_description": rule_description,
+        "visible":          is_vis,
+        "confidence":       conf,
+        "filter_now_says":  "YES" if is_vis else "NO",
+    }
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
