@@ -632,16 +632,6 @@ SECTION_J = [
              {"amenity": "cafe"}, "NO"),  # medium >250m
     ]),
 ]
-
-# ---------------------------------------------------------------------------
-# Auto-generated regression tests (written by auto_fix_agent.py)
-# ---------------------------------------------------------------------------
-
-SECTION_AUTO = [
-    # Auto-generated regression test
-    scenario("West Village Marina", 37.7749, -122.4194, 45, "Main St", [poi("West Village Marina", 37.7748, -122.4193, {"leisure": "marina"}, "West Village Marina")]),
-]  # end SCENARIOS
-
 # ---------------------------------------------------------------------------
 # All scenarios
 # ---------------------------------------------------------------------------
@@ -649,8 +639,7 @@ SECTION_AUTO = [
 
 ALL_SCENARIOS = (
     SECTION_A + SECTION_B + SECTION_C + SECTION_D +
-    SECTION_E + SECTION_F + SECTION_G + SECTION_H + SECTION_I + SECTION_J +
-    SECTION_AUTO
+    SECTION_E + SECTION_F + SECTION_G + SECTION_H + SECTION_I + SECTION_J
 )
 
 
