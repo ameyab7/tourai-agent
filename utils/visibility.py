@@ -189,7 +189,13 @@ def _size_category(tags: dict, geometry: list[dict]) -> str:
     for key in ("amenity", "building", "leisure", "tourism"):
         val = tags.get(key, "")
         if val in _TAG_SIZES:
-            return _TAG_SIZES[val]
+            size = _TAG_SIZES[val]
+            # Notable artworks (object has a Wikidata entry) are upgraded to medium —
+            # they tend to be large public sculptures visible from further away.
+            # Generic artworks without wikidata stay small (avoids panda-style FPs).
+            if size == "small" and val in ("artwork", "sculpture") and tags.get("wikidata"):
+                return "medium"
+            return size
 
     # 5. Default: medium (not small) — safer for unlabelled buildings
     return "medium"
@@ -388,7 +394,10 @@ def _size_category_reason(tags: dict, geometry: list[dict]) -> tuple[str, str]:
     for key in ("amenity", "building", "leisure", "tourism"):
         val = tags.get(key, "")
         if val in _TAG_SIZES:
-            return _TAG_SIZES[val], f"{key}={val} → {_TAG_SIZES[val]} (tag heuristic)"
+            size = _TAG_SIZES[val]
+            if size == "small" and val in ("artwork", "sculpture") and tags.get("wikidata"):
+                return "medium", f"{key}={val} + wikidata present → medium (notable artwork upgrade)"
+            return size, f"{key}={val} → {size} (tag heuristic)"
 
     # 5. Default
     return "medium", "no height/floors/footprint/tag match → medium (default)"
