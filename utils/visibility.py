@@ -336,11 +336,11 @@ def _is_visible(
         return (True, round(conf * aspect_conf, 2))
 
     if size == "medium":
-        visible = in_fov and distance_m < 250 * dist_mult
+        visible = in_fov and distance_m < 300 * dist_mult
         if not visible:
             return (False, 0.80)
         conf = 0.80 * angle_conf
-        if distance_m > 180:
+        if distance_m > 220:
             conf *= 0.8
         return (True, round(conf * aspect_conf, 2))
 
@@ -492,7 +492,7 @@ def diagnose_poi(
             f"{'visible' if in_fov and dist < threshold else 'not visible'}"
         )
     elif size == "medium":
-        threshold = 250 * dist_mult
+        threshold = 300 * dist_mult
         rule = "medium"
         rule_description = (
             f"medium: needs in_fov + dist < {threshold:.0f}m (dist_mult={dist_mult}x), "
