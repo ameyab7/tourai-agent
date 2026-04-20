@@ -91,7 +91,13 @@ async function fetchStory(poi) {
   }
 }
 
-async function reportFalsePositive(poi, lat, lon, heading, street) {
+async function reportFalsePositive(poi, currentLat, currentLon, currentHeading, street) {
+  // Use the location+heading from when the dot appeared, not current position.
+  // This gives an accurate diagnosis of why the filter showed the POI.
+  const lat     = poi._poll_lat     ?? currentLat;
+  const lon     = poi._poll_lon     ?? currentLon;
+  const heading = poi._poll_heading ?? currentHeading;
+
   const resp = await fetch(`${API_BASE}/v1/feedback`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -198,9 +204,18 @@ export default function App() {
     lastPollTimeRef.current = Date.now();
 
     try {
-      const data = await fetchVisiblePois(loc.lat, loc.lon, headingRef.current);
-      lastPollHeadingRef.current = headingRef.current;
-      setVisiblePois(data.visible_pois ?? []);
+      const pollHeading = headingRef.current;
+      const pollLoc     = { ...loc };
+      const data = await fetchVisiblePois(pollLoc.lat, pollLoc.lon, pollHeading);
+      lastPollHeadingRef.current = pollHeading;
+      // Tag each POI with the location+heading at the time it was shown
+      const pois = (data.visible_pois ?? []).map(p => ({
+        ...p,
+        _poll_lat:     pollLoc.lat,
+        _poll_lon:     pollLoc.lon,
+        _poll_heading: pollHeading,
+      }));
+      setVisiblePois(pois);
       setStreetName(data.street_name ?? null);
       setError(null);
     } catch (err) {
