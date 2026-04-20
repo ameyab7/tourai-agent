@@ -422,20 +422,39 @@ Please fix this false {'positive' if entry.get('user_says') == 'NO' else 'negati
 # Main
 # ---------------------------------------------------------------------------
 
+def _fetch_from_api(api_base: str) -> list[dict]:
+    """Pull DISAGREE entries from the live Railway API."""
+    import urllib.request
+    url = f"{api_base.rstrip('/')}/v1/feedback?agreement=DISAGREE&limit=100"
+    with urllib.request.urlopen(url, timeout=10) as r:
+        return json.loads(r.read())["entries"]
+
+
+def _load_from_file(log_path: Path) -> list[dict]:
+    """Load DISAGREE entries from a local NDJSON file."""
+    entries = []
+    for line in log_path.read_text().splitlines():
+        try:
+            e = json.loads(line)
+            if e.get("agreement") == "DISAGREE":
+                entries.append(e)
+        except Exception:
+            pass
+    return entries
+
+
 def main():
     parser = argparse.ArgumentParser(description="Auto-fix visibility filter issues from feedback log")
-    parser.add_argument("--log",       default="feedback_log.ndjson")
+    parser.add_argument("--api",       default="https://tourai-agent-production.up.railway.app",
+                        help="API base URL to pull feedback from (default: Railway production)")
+    parser.add_argument("--log",       default=None,
+                        help="Local NDJSON log path (overrides --api if set)")
     parser.add_argument("--dry-run",   action="store_true", help="Propose fixes only, don't apply")
     parser.add_argument("--no-deploy", action="store_true", help="Commit fixes but don't deploy")
     parser.add_argument("--limit",     type=int, default=5, help="Max entries to process per run")
     args = parser.parse_args()
 
-    log_path = ROOT / args.log
-    if not log_path.exists():
-        print(f"No feedback log found at {log_path}")
-        return
-
-    # Load already-processed entry IDs
+    # Load already-processed entry timestamps
     processed = set()
     if PROCESSED_LOG.exists():
         for line in PROCESSED_LOG.read_text().splitlines():
@@ -444,15 +463,23 @@ def main():
             except Exception:
                 pass
 
-    # Find DISAGREE entries not yet processed
-    entries = []
-    for line in log_path.read_text().splitlines():
+    # Fetch entries — prefer local file if explicitly specified, otherwise pull from API
+    if args.log:
+        log_path = ROOT / args.log
+        if not log_path.exists():
+            print(f"No feedback log found at {log_path}")
+            return
+        all_entries = _load_from_file(log_path)
+        print(f"Loaded {len(all_entries)} DISAGREE entries from {log_path}")
+    else:
         try:
-            e = json.loads(line)
-        except Exception:
-            continue
-        if e.get("agreement") == "DISAGREE" and e.get("ts") not in processed:
-            entries.append(e)
+            all_entries = _fetch_from_api(args.api)
+            print(f"Fetched {len(all_entries)} DISAGREE entries from {args.api}")
+        except Exception as exc:
+            print(f"Failed to fetch from API ({exc}). Try --log <path> for a local file.")
+            return
+
+    entries = [e for e in all_entries if e.get("ts") not in processed]
 
     if not entries:
         print("No unprocessed DISAGREE entries found.")
