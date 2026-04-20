@@ -91,11 +91,21 @@ async def get_visible_pois(body: VisiblePoisRequest) -> VisiblePoisResponse:
 
     if pois is None:
         metrics.cache_misses.labels(cache_type="poi").inc()
+        async def _fetch_tall():
+            try:
+                return await asyncio.wait_for(
+                    search_tall_buildings(body.latitude, body.longitude, radius=1500, min_levels=15),
+                    timeout=5.0,
+                )
+            except (asyncio.TimeoutError, Exception):
+                logger.info("tall_buildings_skipped", extra={"reason": "timeout or error"})
+                return []
+
         try:
             (pois, street, tall) = await asyncio.gather(
                 _fetch_pois(),
                 _fetch_street(),
-                search_tall_buildings(body.latitude, body.longitude, radius=1500, min_levels=15),
+                _fetch_tall(),
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
