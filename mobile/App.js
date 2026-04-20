@@ -91,6 +91,29 @@ async function fetchStory(poi) {
   }
 }
 
+async function reportFalsePositive(poi, lat, lon, heading, street) {
+  const resp = await fetch(`${API_BASE}/v1/feedback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      latitude:     lat,
+      longitude:    lon,
+      heading:      heading,
+      poi_id:       poi.id,
+      poi_name:     poi.name,
+      poi_lat:      poi.lat,
+      poi_lon:      poi.lon,
+      poi_tags:     poi.tags ?? {},
+      poi_geometry: [],
+      user_says:    'NO',
+      user_street:  street ?? null,
+      note:         'Reported via app — user cannot see this POI',
+    }),
+  });
+  if (!resp.ok) throw new Error(`API ${resp.status}`);
+  return resp.json();
+}
+
 async function askQuestion(question, lat, lon, nearbyPois) {
   const resp = await fetch(`${API_BASE}/v1/ask`, {
     method: 'POST',
@@ -296,6 +319,12 @@ export default function App() {
     return askQuestion(question, loc.lat, loc.lon, visiblePois);
   }, [visiblePois]);
 
+  const handleReport = useCallback(async (poi) => {
+    const loc = locationRef.current;
+    if (!loc) throw new Error('Location not available');
+    return reportFalsePositive(poi, loc.lat, loc.lon, headingRef.current, streetName);
+  }, [streetName]);
+
   // Fix 8 — in-memory story cache so re-tapping a marker skips the network call
   const storyCacheRef = useRef(new Map());
   const handleFetchStory = useCallback(async poi => {
@@ -405,6 +434,7 @@ export default function App() {
         visible={selectedPoi !== null}
         onClose={() => setSelectedPoi(null)}
         onFetchStory={handleFetchStory}
+        onReport={handleReport}
       />
 
       {/* DEV ONLY — remove <SimulateWalkPanel> for production */}
