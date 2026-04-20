@@ -146,6 +146,10 @@ _TAG_SIZES: dict[str, str] = {
     "shop":             "small",
     "convenience":      "small",
     "atm":              "small",
+    # small — street-level art objects (statues, sculptures, installations)
+    "artwork":          "small",
+    "sculpture":        "small",
+    "fountain":         "small",
 }
 
 # POI types that get a 1.5× distance multiplier

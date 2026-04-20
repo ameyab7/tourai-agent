@@ -273,10 +273,10 @@ SECTION_E = [
         poi("e9", "Public Fountain", 40.7473, -73.9967,
             {"amenity": "fountain", "addr:street": "Park Avenue"}, "NO"),
     ]),
-    scenario("E10: medium POI no addr:street 150m → YES (street unknown, no penalty)",
+    scenario("E10: artwork no addr:street 150m → NO (artwork=small, needs <80m)",
              40.7455, -73.9967, 0.0, "5th Avenue", [
         poi("e10", "Unlabelled Artwork 150m", 40.7469, -73.9967,
-            {"tourism": "artwork"}, "YES"),
+            {"tourism": "artwork"}, "NO"),
     ]),
     scenario("E11: very_large on different street → YES (tall enough to see over buildings)",
              40.7455, -73.9967, 0.0, "Canton Street", [
@@ -543,7 +543,7 @@ SECTION_J = [
             {"amenity": "theatre", "building:levels": "3"}, "NO"),  # medium theatre, 396m > 250m
         poi("j5c", "Small Mural Wall",
             32.7840, -96.7840,
-            {"tourism": "artwork"}, "YES"),  # 186m ahead, artwork → medium default, <250m
+            {"tourism": "artwork"}, "NO"),   # 186m ahead, artwork → small, needs <80m
         poi("j5d", "Klyde Warren Park",
             32.7885, -96.8015,
             {"leisure": "park", "tourism": "attraction"}, "NO"),  # far, different direction
