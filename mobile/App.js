@@ -147,6 +147,7 @@ export default function App() {
   const [error, setError] = useState(null);
 
   const headingRef       = useRef(0);
+  const lastPollHeadingRef = useRef(0);    // heading at the time of last poll
   const locationRef      = useRef(null);
   const intervalRef      = useRef(null);
   const appStateRef      = useRef(AppState.currentState);
@@ -198,6 +199,7 @@ export default function App() {
 
     try {
       const data = await fetchVisiblePois(loc.lat, loc.lon, headingRef.current);
+      lastPollHeadingRef.current = headingRef.current;
       setVisiblePois(data.visible_pois ?? []);
       setStreetName(data.street_name ?? null);
       setError(null);
@@ -257,8 +259,17 @@ export default function App() {
 
       // Compass heading — only use trueHeading (requires motion to compute).
       // magHeading is too noisy when stationary; keeping last known value is better.
+      // If heading swings >60° since last poll, clear stale dots immediately so
+      // POIs that were in FOV don't linger after the user turns away.
       headingSub = await Location.watchHeadingAsync(hdg => {
-        if (hdg.trueHeading >= 0) headingRef.current = hdg.trueHeading;
+        if (hdg.trueHeading < 0) return;
+        const prev = headingRef.current;
+        headingRef.current = hdg.trueHeading;
+        const delta = Math.abs(((hdg.trueHeading - prev) + 540) % 360 - 180);
+        const pollDelta = Math.abs(((hdg.trueHeading - lastPollHeadingRef.current) + 540) % 360 - 180);
+        if (delta > 5 && pollDelta > 60) {
+          setVisiblePois([]);  // clear stale dots — next poll will repopulate
+        }
       });
 
       // 5-second poll interval
