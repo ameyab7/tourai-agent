@@ -109,14 +109,6 @@ class FeedbackDiagnosis(BaseModel):
     angle_deg:        float
     in_fov:           bool
     size:             str
-    size_reason:      str
-    poi_type:         str
-    is_landmark:      bool
-    dist_mult:        float
-    same_street:      bool
-    cross_street:     bool
-    street_info:      str
-    aspect_conf:      float
     rule:             str
     rule_description: str
     visible:          bool

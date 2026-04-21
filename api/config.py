@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     request_timeout: int = 30
     poi_cache_ttl:   int = 3600
     vis_cache_ttl:   int = 300
+    area_cache_ttl:  int = 3600   # obstacle buildings cache — 1 hour (buildings don't move)
 
     debug:      bool = False  # enables /debug endpoint
     sentry_dsn: str  = ""     # optional — leave empty to disable

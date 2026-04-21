@@ -1,521 +1,631 @@
 # utils/visibility.py
 #
-# Geometric visibility filter with confidence scoring.
-#
-# Pre-computes size, distance, angle, occlusion, and aspect ratio for each POI,
-# then applies deterministic rules with confidence weighting.
+# Geometric visibility filter using Shapely ray casting + UTM projection.
+# Logic ported from tests/test_geoapify_visibility.py.
 #
 # Public API:
-#   filter_visible(pois, user_lat, user_lon, user_heading, user_street) → (visible, rejected)
+#   filter_visible(pois, user_lat, user_lon, user_heading, buildings=None)
+#       → (visible: list[dict], rejected: list[dict])
 #
-# Each returned POI gains:
-#   distance_m  — metres from user
-#   angle_deg   — degrees off user heading (0=ahead, 180=behind)
-#   confidence  — float 0.0–1.0
-#   blocked_by  — list of closer building names in the same sightline
+#   diagnose_poi(poi, user_lat, user_lon, user_heading)
+#       → dict  (for feedback route)
+#
+# buildings: dict[place_id → (name: str, wgs84_geom: BaseGeometry)]
+# Each returned POI gains: distance_m, angle_deg, confidence, blocked_by.
 
 import logging
 import math
-import re
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
+# ── Shapely ───────────────────────────────────────────────────────────────────
+try:
+    from shapely.geometry import LineString, Point, shape as shapely_shape
+    from shapely.geometry.base import BaseGeometry
+    from shapely.ops import transform as shp_transform, nearest_points
+    SHAPELY = True
+except ImportError:
+    SHAPELY = False
+    BaseGeometry = object
+    logger.warning("shapely not installed — ray casting disabled")
 
-# ---------------------------------------------------------------------------
-# Geometry helpers
-# ---------------------------------------------------------------------------
+# ── pyproj ────────────────────────────────────────────────────────────────────
+try:
+    from pyproj import Transformer
+    PYPROJ = True
+except ImportError:
+    PYPROJ = False
+    logger.warning("pyproj not installed — using lon/lat fallback for ray casting")
 
-def _polygon_area_m2(pts_m: list[tuple[float, float]]) -> float:
-    """Shoelace formula on pre-projected (x_m, y_m) points."""
-    n = len(pts_m)
-    if n < 3:
-        return 0.0
-    return abs(sum(
-        pts_m[i][0] * pts_m[(i + 1) % n][1] - pts_m[(i + 1) % n][0] * pts_m[i][1]
-        for i in range(n)
-    )) / 2
-
-
-def _project_geometry(geometry: list[dict]) -> list[tuple[float, float]]:
-    """Convert lon/lat geometry to flat (x_m, y_m) relative to first point."""
-    if not geometry:
-        return []
-    lat0 = geometry[0]["lat"]
-    R    = 6_371_000
-    return [
-        (
-            math.radians(c["lon"] - geometry[0]["lon"]) * R * math.cos(math.radians(lat0)),
-            math.radians(c["lat"] - geometry[0]["lat"]) * R,
-        )
-        for c in geometry
-    ]
+# ── geoutils ─────────────────────────────────────────────────────────────────
+from utils.geoutils import haversine_meters, bearing as _compass_bearing
 
 
-def _bounding_box_dims(pts_m: list[tuple[float, float]]) -> tuple[float, float]:
-    """Return (width_m, depth_m) of axis-aligned bounding box."""
-    if not pts_m:
-        return 0.0, 0.0
-    xs = [p[0] for p in pts_m]
-    ys = [p[1] for p in pts_m]
-    return max(xs) - min(xs), max(ys) - min(ys)
+# =============================================================================
+# Constants
+# =============================================================================
 
+FOV_HALF_DEG     = 90     # ±90° → full forward hemisphere
+PARK_PROXIMITY_M = 80     # park visible if user within 80m of polygon boundary
+RAYCAST_MAX_DIST = 300    # metres — primary ray cast range
+RAY_TRUNCATE_M   = 2.5    # truncate ray short of target to prevent self-occlusion
 
-def _parse_height(value) -> float | None:
-    try:
-        return float(str(value).lower().replace("m", "").replace("ft", "").strip())
-    except (ValueError, TypeError):
-        return None
-
-
-# ---------------------------------------------------------------------------
-# Street name normalisation
-#
-# Strips directional prefixes and common suffix abbreviations so that
-# "N Main Street" == "Main St" == "Main".
-# ---------------------------------------------------------------------------
-
-_STREET_SUFFIXES = re.compile(
-    r"\b(street|st|avenue|ave|boulevard|blvd|road|rd|drive|dr|lane|ln|"
-    r"court|ct|place|pl|way|wy|circle|cir|trail|trl|parkway|pkwy)\b",
-    re.IGNORECASE,
-)
-_DIRECTIONAL = re.compile(r"^(north|south|east|west|n|s|e|w)\s+", re.IGNORECASE)
-
-
-def _normalize_street(name: str) -> str:
-    name = name.strip().lower()
-    name = _DIRECTIONAL.sub("", name)
-    name = _STREET_SUFFIXES.sub("", name)
-    return name.strip()
-
-
-def _streets_match(a: str, b: str) -> bool:
-    """True if two street names refer to the same street."""
-    na, nb = _normalize_street(a), _normalize_street(b)
-    if not na or not nb:
-        return False
-    return na == nb or na in nb or nb in na
-
-
-# ---------------------------------------------------------------------------
-# Size classification
-#
-# Categories:  very_large | large | medium | small
-# Priority:    floors > explicit height > footprint area > tag heuristics
-#
-# Default for unlabelled buildings is "medium" (not "small") to avoid
-# false negatives when OSM data is incomplete.
-# ---------------------------------------------------------------------------
-
-_TAG_SIZES: dict[str, str] = {
-    # very_large
-    "stadium":          "very_large",
-    "arena":            "very_large",
-    # large
-    "cathedral":        "large",
-    "university":       "large",
-    "college":          "large",
-    # medium — notable civic / cultural buildings
-    "theatre":          "medium",
-    "museum":           "medium",
-    "attraction":       "medium",
-    "gallery":          "medium",
-    "place_of_worship": "medium",
-    "church":           "medium",
-    "chapel":           "medium",
-    "synagogue":        "medium",
-    "mosque":           "medium",
-    "temple":           "medium",
-    "arts_centre":      "medium",
-    "concert_hall":     "medium",
-    "opera_house":      "medium",
-    "library":          "medium",
-    "townhall":         "medium",
-    "courthouse":       "medium",
-    "monument":         "medium",
-    "castle":           "medium",
-    "memorial":         "medium",
-    # small — street-level establishments (explicit so they don't hit the medium default)
-    "cafe":             "small",
-    "restaurant":       "small",
-    "bar":              "small",
-    "pub":              "small",
-    "fast_food":        "small",
-    "food_court":       "small",
-    "kiosk":            "small",
-    "shop":             "small",
-    "convenience":      "small",
-    "atm":              "small",
-    # small — street-level art objects (statues, sculptures, installations)
-    "artwork":          "small",
-    "sculpture":        "small",
-    "fountain":         "small",
-    "marina":           "small",
+# Recognizability: hard AND gate after visibility passes.
+# Even a clear sightline doesn't help if the POI is too far to identify.
+_RECOG_DIST: dict[str, float] = {
+    "very_large": 800.0,
+    "large":      350.0,
+    "medium":     150.0,
+    "small":       40.0,
 }
 
-# POI types that get a 1.5× distance multiplier
-_LANDMARK_TYPES: frozenset[str] = frozenset({
-    "stadium", "arena", "tower", "cathedral",
-    "monument", "memorial", "castle",
-})
+MAX_PARK_DIST_NO_POLY = 100.0   # fallback when no park polygon available
 
 
-def _size_category(tags: dict, geometry: list[dict]) -> str:
-    # 1. Floor count
-    try:
-        floors = int(tags.get("building:levels", 0))
-        if floors >= 30: return "very_large"
-        if floors >= 10: return "large"
-        if floors >= 4:  return "medium"
-    except (ValueError, TypeError):
-        pass
+# =============================================================================
+# Size classification
+# =============================================================================
 
-    # 2. Explicit height tag
-    h = _parse_height(tags.get("height"))
-    if h is not None:
-        if h >= 100: return "very_large"
-        if h >= 30:  return "large"
-        if h >= 12:  return "medium"
+# Geoapify categories → size bucket
+_CAT_SIZE: dict[str, str] = {
+    "man_made.tower":                "very_large",
+    "tourism.sights.tower":          "very_large",
+    "man_made.water_tower":          "very_large",
+    "man_made.lighthouse":           "very_large",
+    "tourism.sights.lighthouse":     "very_large",
+    "entertainment.museum":          "large",
+    "entertainment.culture.theatre": "large",
+    "entertainment.culture":         "large",
+    "tourism.sights.castle":         "large",
+    "tourism.sights.city_hall":      "large",
+    "building.public_and_civil":     "large",
+    "building.historic":             "large",
+    "heritage":                      "large",
+    "heritage.unesco":               "large",
+    "tourism":                       "medium",
+    "tourism.sights":                "medium",
+    "tourism.attraction":            "medium",
+    "building":                      "medium",
+    "amenity":                       "medium",
+    "leisure":                       "small",
+    "leisure.park":                  "small",
+    "entertainment":                 "small",
+    "dogs":                          "small",
+    "access_limited":                "small",
+}
 
-    # 3. Polygon footprint area
-    if geometry:
-        pts = _project_geometry(geometry)
-        area = _polygon_area_m2(pts)
-        if area >= 10_000: return "very_large"
-        if area >= 3_000:  return "large"
-        if area >= 500:    return "medium"
+_SIZE_RANK: dict[str, int] = {
+    "very_large": 3, "large": 2, "medium": 1, "small": 0,
+}
 
-    # 4. Tag heuristics
-    for key in ("amenity", "building", "leisure", "tourism"):
+_SIZE_MAX_DIST: dict[str, float] = {
+    "very_large": 1500.0,
+    "large":       600.0,
+    "medium":      300.0,
+    "small":        80.0,
+}
+
+# OSM tags → size bucket (fallback when Geoapify categories unavailable)
+_TAG_SIZE_FALLBACK: dict[str, str] = {
+    "stadium": "very_large", "arena": "very_large",
+    "tower": "very_large", "lighthouse": "very_large",
+    "cathedral": "large", "university": "large", "college": "large",
+    "museum": "large", "theatre": "large", "concert_hall": "large",
+    "opera": "large", "castle": "large",
+    "place_of_worship": "medium", "church": "medium", "chapel": "medium",
+    "mosque": "medium", "temple": "medium", "synagogue": "medium",
+    "library": "medium", "townhall": "medium", "courthouse": "medium",
+    "attraction": "medium", "monument": "medium", "historic": "medium",
+    "cafe": "small", "restaurant": "small", "bar": "small",
+    "pub": "small", "shop": "small", "artwork": "small",
+    "sculpture": "small", "fountain": "small",
+    "park": "small", "garden": "small",
+}
+
+
+def _best_size_from_cats(cats: list[str]) -> str:
+    """Largest size bucket across all Geoapify categories."""
+    best = "medium"
+    for cat in cats:
+        for lookup in (cat, ".".join(cat.split(".")[:2]), cat.split(".")[0]):
+            if lookup in _CAT_SIZE:
+                s = _CAT_SIZE[lookup]
+                if _SIZE_RANK[s] > _SIZE_RANK[best]:
+                    best = s
+                break
+    return best
+
+
+def _best_size_from_tags(tags: dict) -> str:
+    """Size bucket from OSM tags — used when Geoapify categories unavailable."""
+    for key in ("tourism", "historic", "amenity", "leisure", "building", "man_made"):
         val = tags.get(key, "")
-        if val in _TAG_SIZES:
-            size = _TAG_SIZES[val]
-            # Notable artworks (object has a Wikidata entry) are upgraded to medium —
-            # they tend to be large public sculptures visible from further away.
-            # Generic artworks without wikidata stay small (avoids panda-style FPs).
-            if size == "small" and val in ("artwork", "sculpture") and tags.get("wikidata"):
-                return "medium"
-            return size
-
-    # 5. Default: medium (not small) — safer for unlabelled buildings
+        if val in _TAG_SIZE_FALLBACK:
+            return _TAG_SIZE_FALLBACK[val]
     return "medium"
 
 
-def _is_landmark(poi_type: str) -> bool:
-    return poi_type in _LANDMARK_TYPES
+def _best_size(poi: dict) -> str:
+    """Return best size bucket, preferring Geoapify categories over OSM tags."""
+    cats = poi.get("categories", [])
+    if cats:
+        return _best_size_from_cats(cats)
+    return _best_size_from_tags(poi.get("tags", {}))
 
 
-# ---------------------------------------------------------------------------
-# Aspect ratio — narrow-side penalty
-#
-# If the user is viewing a building along its narrow dimension (viewing angle
-# roughly perpendicular to the long axis), confidence is reduced by 0.3×.
-# Only applied when polygon geometry is available.
-# ---------------------------------------------------------------------------
+# =============================================================================
+# Park classification
+# =============================================================================
 
-def _aspect_confidence_penalty(
-    geometry:  list[dict],
-    angle_deg: float,       # user bearing relative to heading
-    user_bear: float,       # absolute compass bearing to POI
-) -> float:
-    """Return a confidence multiplier in (0.7, 1.0].
-
-    1.0 → viewing the wide face; 0.7 → viewing the narrow face.
-    """
-    if len(geometry) < 3:
-        return 1.0
-
-    pts = _project_geometry(geometry)
-    width, depth = _bounding_box_dims(pts)
-
-    if depth == 0 or width == 0:
-        return 1.0
-
-    ratio = max(width, depth) / min(width, depth)
-    if ratio < 3.0:
-        return 1.0   # not elongated — no penalty
-
-    # The long axis of the bounding box
-    long_axis_deg = 0.0 if width >= depth else 90.0
-
-    # Angular difference between user's approach direction and long axis
-    # If viewing nearly parallel to long axis → wide face → no penalty
-    # If viewing nearly perpendicular → narrow face → penalty
-    approach = user_bear % 180        # fold to [0, 180)
-    diff = abs((approach - long_axis_deg + 90) % 180 - 90)   # [0, 90]
-
-    if diff > 60:      # viewing narrow face
-        return 0.7
-    return 1.0
+_PARK_CATS = frozenset({
+    "leisure", "leisure.park", "leisure.garden",
+    "leisure.nature_reserve", "leisure.national_park",
+})
 
 
-# ---------------------------------------------------------------------------
-# Occlusion hints
-# ---------------------------------------------------------------------------
-
-def _add_occlusion_hints(pois: list[dict]) -> list[dict]:
-    sorted_pois = sorted(pois, key=lambda p: p["distance_m"])
-    for i, poi in enumerate(sorted_pois):
-        poi["blocked_by"] = [
-            closer["name"]
-            for closer in sorted_pois[:i]
-            if abs(closer["angle_deg"] - poi["angle_deg"]) < 15
-            and closer["_size"] in ("large", "very_large")
-        ]
-    return sorted_pois
+def _is_park(poi: dict) -> bool:
+    cats = poi.get("categories", [])
+    if any(c in _PARK_CATS for c in cats):
+        return True
+    tags = poi.get("tags", {})
+    return tags.get("leisure") in ("park", "garden", "nature_reserve")
 
 
-# ---------------------------------------------------------------------------
-# Angle-based confidence multiplier
-# ---------------------------------------------------------------------------
+# =============================================================================
+# UTM projection helpers
+# =============================================================================
 
-def _angle_confidence(angle_deg: float) -> float:
-    if angle_deg < 20:  return 1.0
-    if angle_deg < 60:  return 0.7
-    return 0.3
+_utm_xfm_cache: dict[int, Any] = {}
 
 
-# ---------------------------------------------------------------------------
-# Core visibility decision
-# ---------------------------------------------------------------------------
-
-def _is_visible(
-    size:          str,
-    distance_m:    float,
-    angle_deg:     float,
-    same_street:   bool,
-    blocked_by:    list,
-    poi_type:      str,
-    aspect_conf:   float = 1.0,   # from _aspect_confidence_penalty
-    cross_street:  bool  = False,  # True when addr:street is known and doesn't match user's street
-) -> tuple[bool, float]:
-    """Return (is_visible, confidence ∈ [0, 1])."""
-
-    in_fov     = angle_deg < 60
-    angle_conf = _angle_confidence(angle_deg)
-
-    # ── Proximity overrides ──────────────────────────────────────────────────
-    if distance_m < 30 and in_fov:
-        return (True, round(0.95 * aspect_conf, 2))
-
-    if distance_m < 50 and in_fov and size in ("small", "medium"):
-        return (True, round(0.90 * aspect_conf, 2))
-
-    # ── Cross-street suppression for medium POIs ─────────────────────────────
-    # If OSM explicitly says this POI is on a different street, it is behind
-    # buildings between the streets and not directly visible, regardless of
-    # what category it is.  large/very_large are tall enough to see over those
-    # buildings, so they are left to the normal distance rules.
-    if cross_street and size == "medium":
-        return (False, 0.85)
-
-    # ── Occlusion override ───────────────────────────────────────────────────
-    if blocked_by and size in ("small", "medium") and distance_m > 100:
-        return (False, 0.90)
-
-    # ── Landmark distance multiplier ─────────────────────────────────────────
-    dist_mult = 1.5 if _is_landmark(poi_type) else 1.0
-
-    # ── Size + distance rules ────────────────────────────────────────────────
-    if size == "very_large":
-        if in_fov:
-            visible = distance_m < 1500 * dist_mult
-            conf    = 0.95 * angle_conf if visible else 0.9
-        else:
-            visible = distance_m < 800 * dist_mult
-            conf    = 0.75 * angle_conf if visible else 0.85
-        return (visible, round(conf * aspect_conf, 2))
-
-    if size == "large":
-        visible = in_fov and distance_m < 600 * dist_mult
-        if not visible:
-            return (False, 0.85)
-        conf = 0.85 * angle_conf
-        if distance_m > 450:
-            conf *= 0.8
-        return (True, round(conf * aspect_conf, 2))
-
-    if size == "medium":
-        visible = in_fov and distance_m < 300 * dist_mult
-        if not visible:
-            return (False, 0.80)
-        conf = 0.80 * angle_conf
-        if distance_m > 220:
-            conf *= 0.8
-        return (True, round(conf * aspect_conf, 2))
-
-    # small
-    visible = in_fov and distance_m < 80 and same_street
-    if not visible:
-        return (False, 0.75)
-    return (True, round(0.75 * angle_conf * aspect_conf, 2))
+def _utm_epsg(lat: float, lon: float) -> int:
+    zone = int((lon + 180) / 6) + 1
+    return 32600 + zone if lat >= 0 else 32700 + zone
 
 
-# ---------------------------------------------------------------------------
-# Size category with reason (used by diagnose_poi)
-# ---------------------------------------------------------------------------
+def _get_utm_transformer(lat: float, lon: float) -> Optional[Any]:
+    if not PYPROJ:
+        return None
+    epsg = _utm_epsg(lat, lon)
+    if epsg not in _utm_xfm_cache:
+        _utm_xfm_cache[epsg] = Transformer.from_crs(
+            "EPSG:4326", f"EPSG:{epsg}", always_xy=True
+        )
+    return _utm_xfm_cache[epsg]
 
-def _size_category_reason(tags: dict, geometry: list[dict]) -> tuple[str, str]:
-    """Return (size, reason_string) explaining which rule determined the size."""
-    # 1. Floor count
+
+def _project_geom(geom: Any, transformer: Any) -> Optional[Any]:
+    if not SHAPELY or geom is None or transformer is None:
+        return None
     try:
-        floors = int(tags.get("building:levels", 0))
-        if floors >= 30:
-            return "very_large", f"building:levels={floors} ≥ 30 → very_large (floors)"
-        if floors >= 10:
-            return "large",      f"building:levels={floors} ≥ 10 → large (floors)"
-        if floors >= 4:
-            return "medium",     f"building:levels={floors} ≥ 4 → medium (floors)"
-    except (ValueError, TypeError):
-        pass
-
-    # 2. Explicit height tag
-    h = _parse_height(tags.get("height"))
-    if h is not None:
-        if h >= 100:
-            return "very_large", f"height={tags.get('height')} → {h:.0f}m ≥ 100 → very_large"
-        if h >= 30:
-            return "large",      f"height={tags.get('height')} → {h:.0f}m ≥ 30 → large"
-        if h >= 12:
-            return "medium",     f"height={tags.get('height')} → {h:.0f}m ≥ 12 → medium"
-
-    # 3. Polygon footprint area
-    if geometry:
-        pts = _project_geometry(geometry)
-        area = _polygon_area_m2(pts)
-        if area >= 10_000:
-            return "very_large", f"footprint area {area:.0f} m² ≥ 10 000 → very_large"
-        if area >= 3_000:
-            return "large",      f"footprint area {area:.0f} m² ≥ 3 000 → large"
-        if area >= 500:
-            return "medium",     f"footprint area {area:.0f} m² ≥ 500 → medium"
-
-    # 4. Tag heuristics
-    for key in ("amenity", "building", "leisure", "tourism"):
-        val = tags.get(key, "")
-        if val in _TAG_SIZES:
-            size = _TAG_SIZES[val]
-            if size == "small" and val in ("artwork", "sculpture") and tags.get("wikidata"):
-                return "medium", f"{key}={val} + wikidata present → medium (notable artwork upgrade)"
-            return size, f"{key}={val} → {size} (tag heuristic)"
-
-    # 5. Default
-    return "medium", "no height/floors/footprint/tag match → medium (default)"
+        return shp_transform(transformer.transform, geom)
+    except Exception:
+        return None
 
 
-# ---------------------------------------------------------------------------
-# Public diagnosis API
-# ---------------------------------------------------------------------------
+# =============================================================================
+# FOV
+# =============================================================================
+
+def _in_fov(
+    user_lat: float, user_lon: float,
+    poi_lat:  float, poi_lon:  float,
+    heading:  float,
+) -> bool:
+    bear  = _compass_bearing(user_lat, user_lon, poi_lat, poi_lon)
+    delta = abs((bear - heading + 180) % 360 - 180)
+    return delta <= FOV_HALF_DEG
+
+
+# =============================================================================
+# Nearest boundary point
+# =============================================================================
+
+def _nearest_boundary_point(
+    user_lon: float, user_lat: float,
+    polygon:  Any,
+) -> Optional[tuple[float, float]]:
+    """
+    Return (lon, lat) of the exterior boundary point closest to the user.
+
+    Uses exterior.project() + exterior.interpolate() — operates on the outer
+    ring only so courtyard/interior walls never produce a false target point.
+    For MultiPolygon, checks each component polygon and returns the overall
+    nearest exterior point.
+    """
+    if not SHAPELY or polygon is None:
+        return None
+    user_pt = Point(user_lon, user_lat)
+    try:
+        if hasattr(polygon, "exterior"):
+            ext     = polygon.exterior
+            nearest = ext.interpolate(ext.project(user_pt))
+        else:
+            # MultiPolygon — find nearest exterior point across all parts
+            best_dist = float("inf")
+            nearest   = None
+            for part in polygon.geoms:
+                ext = part.exterior
+                pt  = ext.interpolate(ext.project(user_pt))
+                d   = user_pt.distance(pt)
+                if d < best_dist:
+                    best_dist = d
+                    nearest   = pt
+            if nearest is None:
+                return None
+        return nearest.x, nearest.y
+    except Exception:
+        return None
+
+
+# =============================================================================
+# Own-geom lookup — spatial containment
+# =============================================================================
+
+def _find_own_geom(
+    poi_lat:   float,
+    poi_lon:   float,
+    buildings: dict,   # place_id → (name, wgs84, utm)
+) -> Optional[Any]:
+    """
+    Return the building polygon that contains or is nearest to the POI centroid.
+
+    Two-pass strategy:
+      Pass 1 — strict containment (fast path).
+      Pass 2 — proximity to exterior ≤ ~24m. Handles complex buildings where
+                OSM placed the centroid outside the polygon (entrance gates,
+                irregular parcels, place_id mismatch between API calls).
+    """
+    if not SHAPELY:
+        return None
+    p = Point(poi_lon, poi_lat)
+
+    for _pid, (_name, wgs84_geom, _utm) in buildings.items():
+        if wgs84_geom is None:
+            continue
+        try:
+            if wgs84_geom.contains(p):
+                return wgs84_geom
+        except Exception:
+            continue
+
+    THRESHOLD = 0.00022   # degrees ≈ 24m
+    for _pid, (_name, wgs84_geom, _utm) in buildings.items():
+        if wgs84_geom is None:
+            continue
+        try:
+            ext = (wgs84_geom.exterior
+                   if hasattr(wgs84_geom, "exterior")
+                   else wgs84_geom.boundary)
+            if ext.distance(p) < THRESHOLD:
+                return wgs84_geom
+        except Exception:
+            continue
+
+    return None
+
+
+# =============================================================================
+# Ray casting
+# =============================================================================
+
+def check_line_of_sight(
+    user_lat:     float, user_lon: float,
+    poi_lat:      float, poi_lon:  float,
+    obstacles:    list,   # (name, wgs84_geom, utm_geom_or_None)
+    exclude_geom: Optional[Any] = None,
+    transformer:  Any = None,
+) -> tuple[bool, Optional[str]]:
+    """
+    Cast a ray from user to target, truncated RAY_TRUNCATE_M short.
+    Uses UTM metres when pyproj is available; falls back to lon/lat.
+    """
+    if not SHAPELY or not obstacles:
+        return True, None
+
+    if transformer is not None and PYPROJ:
+        ux, uy = transformer.transform(user_lon, user_lat)
+        px, py = transformer.transform(poi_lon,  poi_lat)
+        total  = math.hypot(px - ux, py - uy)
+        if total < RAY_TRUNCATE_M:
+            return True, None
+        t   = (total - RAY_TRUNCATE_M) / total
+        ray = LineString([(ux, uy), (ux + t * (px - ux), uy + t * (py - uy))])
+
+        for name, wgs84_geom, utm_geom in obstacles:
+            if wgs84_geom is None or wgs84_geom is exclude_geom:
+                continue
+            bldg = utm_geom or _project_geom(wgs84_geom, transformer)
+            if bldg is None:
+                continue
+            try:
+                if ray.intersects(bldg):
+                    return False, name
+            except Exception:
+                continue
+    else:
+        total = haversine_meters(user_lat, user_lon, poi_lat, poi_lon)
+        if total < RAY_TRUNCATE_M:
+            return True, None
+        t     = (total - RAY_TRUNCATE_M) / total
+        e_lon = user_lon + t * (poi_lon - user_lon)
+        e_lat = user_lat + t * (poi_lat - user_lat)
+        ray   = LineString([(user_lon, user_lat), (e_lon, e_lat)])
+
+        for name, wgs84_geom, *_ in obstacles:
+            if wgs84_geom is None or wgs84_geom is exclude_geom:
+                continue
+            try:
+                if ray.intersects(wgs84_geom):
+                    return False, name
+            except Exception:
+                continue
+
+    return True, None
+
+
+# =============================================================================
+# Recognizability gate
+# =============================================================================
+
+def _recognizable(poi: dict, dist_m: float) -> tuple[bool, str]:
+    size     = _best_size(poi)
+    max_dist = _RECOG_DIST[size]
+    if dist_m <= max_dist:
+        return True, ""
+    return False, f"recog: {size} max {max_dist:.0f}m, actual {dist_m:.0f}m"
+
+
+# =============================================================================
+# Heuristic visibility (POIs beyond RAYCAST_MAX_DIST)
+# =============================================================================
+
+def _heuristic_visible(
+    poi:         dict,
+    user_lat:    float, user_lon: float,
+    obstacles:   Optional[list] = None,
+    transformer: Any = None,
+    buildings:   Optional[dict] = None,
+) -> tuple[bool, str]:
+    """
+    Size × distance gate, then coarse ray cast against existing obstacles.
+    No extra API calls — uses already-fetched obstacle polygons.
+    """
+    dist = haversine_meters(user_lat, user_lon, poi["lat"], poi["lon"])
+    size = _best_size(poi)
+    max_dist = _SIZE_MAX_DIST[size]
+
+    if dist > max_dist:
+        return False, f"heuristic: {size} max {max_dist:.0f}m, actual {dist:.0f}m"
+
+    if obstacles:
+        own_geom = _find_own_geom(poi["lat"], poi["lon"], buildings) if buildings else None
+        is_vis, blocker = check_line_of_sight(
+            user_lat, user_lon, poi["lat"], poi["lon"],
+            obstacles, exclude_geom=own_geom, transformer=transformer,
+        )
+        if not is_vis:
+            return False, f"heuristic+raycast: blocked by {blocker}"
+
+    return True, f"heuristic: {size} within {max_dist:.0f}m"
+
+
+# =============================================================================
+# Park visibility
+# =============================================================================
+
+def _park_visible(
+    poi:       dict,
+    user_lat:  float, user_lon: float,
+    buildings: dict,
+) -> tuple[bool, str]:
+    """
+    Parks are shown when the user is within PARK_PROXIMITY_M of the polygon
+    boundary. Falls back to centroid distance when no polygon is available.
+    """
+    own_geom = _find_own_geom(poi["lat"], poi["lon"], buildings)
+
+    if own_geom is not None and SHAPELY:
+        user_pt  = Point(user_lon, user_lat)
+        try:
+            ext     = (own_geom.exterior
+                       if hasattr(own_geom, "exterior")
+                       else own_geom.boundary)
+            dist_m  = ext.distance(user_pt) * 111_000
+            if dist_m <= PARK_PROXIMITY_M:
+                return True, f"park: {dist_m:.0f}m from polygon boundary"
+            return False, f"park: {dist_m:.0f}m from boundary > {PARK_PROXIMITY_M}m"
+        except Exception:
+            pass
+
+    dist = haversine_meters(user_lat, user_lon, poi["lat"], poi["lon"])
+    if dist <= MAX_PARK_DIST_NO_POLY:
+        return True, f"park: centroid {dist:.0f}m (no polygon)"
+    return False, f"park: centroid {dist:.0f}m > {MAX_PARK_DIST_NO_POLY}m (no polygon)"
+
+
+# =============================================================================
+# Single-POI visibility decision
+# =============================================================================
+
+def _check_poi(
+    poi:         dict,
+    user_lat:    float, user_lon: float,
+    user_heading: float,
+    obstacles:   list,   # (name, wgs84, utm) triples — pre-projected
+    buildings:   dict,   # place_id → (name, wgs84, utm) — for own-geom lookup
+    transformer: Any,
+) -> tuple[bool, str]:
+    """
+    Run all visibility gates in priority order:
+      1. FOV filter
+      2. Park special-case (proximity to polygon)
+      3. Ray cast to nearest boundary point (or heuristic beyond 300m)
+      4. Recognizability gate
+    """
+    dist = haversine_meters(user_lat, user_lon, poi["lat"], poi["lon"])
+
+    # 1. FOV gate
+    if not _in_fov(user_lat, user_lon, poi["lat"], poi["lon"], user_heading):
+        bear = _compass_bearing(user_lat, user_lon, poi["lat"], poi["lon"])
+        return False, f"fov: {bear:.0f}° outside ±{FOV_HALF_DEG}° of heading {user_heading:.0f}°"
+
+    # 2. Park special-case
+    if _is_park(poi):
+        is_vis, reason = _park_visible(poi, user_lat, user_lon, buildings)
+        if not is_vis:
+            return False, reason
+        ok, why = _recognizable(poi, dist)
+        return (False, why) if not ok else (True, reason)
+
+    # 3. Ray cast or heuristic
+    if dist > RAYCAST_MAX_DIST:
+        is_vis, reason = _heuristic_visible(
+            poi, user_lat, user_lon,
+            obstacles=obstacles, transformer=transformer, buildings=buildings,
+        )
+    else:
+        own_geom = _find_own_geom(poi["lat"], poi["lon"], buildings)
+        # Cast to nearest exterior boundary point — fixes "wrong facade" problem
+        if own_geom is not None:
+            bp = _nearest_boundary_point(user_lon, user_lat, own_geom)
+        else:
+            bp = None
+        target_lat = bp[1] if bp else poi["lat"]
+        target_lon = bp[0] if bp else poi["lon"]
+
+        is_vis_ray, blocker = check_line_of_sight(
+            user_lat, user_lon, target_lat, target_lon,
+            obstacles, exclude_geom=own_geom, transformer=transformer,
+        )
+        is_vis = is_vis_ray
+        reason = blocker or "clear"
+
+    if not is_vis:
+        return False, reason
+
+    # 4. Recognizability gate
+    ok, why = _recognizable(poi, dist)
+    return (False, why) if not ok else (True, reason)
+
+
+# =============================================================================
+# Public API
+# =============================================================================
+
+def filter_visible(
+    pois:          list[dict],
+    user_lat:      float,
+    user_lon:      float,
+    user_heading:  float,
+    buildings:     Optional[dict] = None,   # place_id → (name, wgs84_geom)
+    user_street:   Optional[str]  = None,   # unused — kept for API compatibility
+) -> tuple[list[dict], list[dict]]:
+    """
+    Filter POIs by geometric visibility: FOV + ray casting + recognizability.
+
+    buildings: dict[place_id → (name, wgs84_geom)] from the area cache.
+               When None (no Geoapify key set), ray casting is skipped and
+               only FOV + size/distance gates are applied.
+
+    Each returned POI gains: distance_m, angle_deg, confidence, blocked_by.
+    Returns (visible, rejected), both sorted by distance_m ascending.
+    """
+    if not pois:
+        return [], []
+
+    xfm = _get_utm_transformer(user_lat, user_lon)
+
+    # Pre-project all building geometries to UTM once for this call
+    if buildings:
+        bldg_utm: dict[str, tuple] = {}
+        for pid, entry in buildings.items():
+            name, wgs84 = entry[0], entry[1]
+            utm = _project_geom(wgs84, xfm)
+            bldg_utm[pid] = (name, wgs84, utm)
+
+        # ── _obstacles_in_bbox filter ──────────────────────────────────────
+        # Mirror test_geoapify_visibility.py: only keep obstacle buildings
+        # whose centroid falls within the bounding box of user + all POI
+        # centroids ± 0.0005° (~55m). Prevents buildings far from every POI
+        # from being tested on every ray cast.
+        if SHAPELY and bldg_utm and pois:
+            _BBOX_BUFFER = 0.0005
+            all_lats = [user_lat] + [p["lat"] for p in pois]
+            all_lons = [user_lon] + [p["lon"] for p in pois]
+            _min_lat = min(all_lats) - _BBOX_BUFFER
+            _max_lat = max(all_lats) + _BBOX_BUFFER
+            _min_lon = min(all_lons) - _BBOX_BUFFER
+            _max_lon = max(all_lons) + _BBOX_BUFFER
+
+            bldg_utm = {
+                pid: triple
+                for pid, triple in bldg_utm.items()
+                if triple[1] is not None and (
+                    _min_lat <= triple[1].centroid.y <= _max_lat and
+                    _min_lon <= triple[1].centroid.x <= _max_lon
+                )
+            }
+
+        obstacles = list(bldg_utm.values())
+    else:
+        bldg_utm  = {}
+        obstacles = []
+
+    visible:  list[dict] = []
+    rejected: list[dict] = []
+
+    for poi in pois:
+        dist  = haversine_meters(user_lat, user_lon, poi["lat"], poi["lon"])
+        bear  = _compass_bearing(user_lat, user_lon, poi["lat"], poi["lon"])
+        angle = abs((bear - user_heading + 180) % 360 - 180)
+
+        is_vis, reason = _check_poi(
+            poi, user_lat, user_lon, user_heading,
+            obstacles, bldg_utm, xfm,
+        )
+
+        enriched = {
+            **poi,
+            "distance_m": round(dist, 1),
+            "angle_deg":  round(angle, 1),
+            "blocked_by": [],
+        }
+
+        if is_vis:
+            enriched["confidence"] = 1.0
+            visible.append(enriched)
+        else:
+            enriched["confidence"]      = 0.0
+            enriched["filtered_reason"] = reason
+            rejected.append(enriched)
+
+    visible.sort(key=lambda p: p["distance_m"])
+    rejected.sort(key=lambda p: p["distance_m"])
+    return visible, rejected
+
 
 def diagnose_poi(
     poi:          dict,
     user_lat:     float,
     user_lon:     float,
     user_heading: float,
-    user_street:  str | None = None,
+    user_street:  Optional[str] = None,   # unused — kept for API compatibility
 ) -> dict:
-    """Run the full visibility pipeline on a single POI and return a structured trace."""
-    from utils.geoutils import haversine_meters, bearing as _bearing
+    """
+    Run the full visibility pipeline on a single POI and return a trace dict.
+    Used by the feedback route to diagnose false positives/negatives.
+    """
+    dist  = haversine_meters(user_lat, user_lon, poi["lat"], poi["lon"])
+    bear  = _compass_bearing(user_lat, user_lon, poi["lat"], poi["lon"])
+    angle = abs((bear - user_heading + 180) % 360 - 180)
+    size  = _best_size(poi)
 
-    tags     = poi.get("tags", {})
-    geometry = poi.get("geometry", [])
-
-    poi_lat = poi.get("lat", user_lat)
-    poi_lon = poi.get("lon", user_lon)
-
-    dist  = haversine_meters(user_lat, user_lon, poi_lat, poi_lon)
-    bear  = _bearing(user_lat, user_lon, poi_lat, poi_lon)
-    angle = (bear - user_heading + 360) % 360
-    if angle > 180:
-        angle = 360 - angle
-
-    size, size_reason = _size_category_reason(tags, geometry)
-
-    poi_street = tags.get("addr:street", "").strip()
-    if poi_street:
-        same_street  = _streets_match(user_street or "", poi_street)
-        cross_street = not same_street
-        street_info  = (
-            f"addr:street='{poi_street}' vs user street='{user_street}' → "
-            f"{'match' if same_street else 'DIFFERENT STREET'}"
-        )
-    else:
-        same_street  = dist < 100
-        cross_street = False
-        street_info  = (
-            f"no addr:street tag → assumed {'same' if same_street else 'different'} "
-            f"(dist {dist:.1f}m {'<' if dist < 100 else '≥'} 100m threshold)"
-        )
-
-    poi_type = (
-        tags.get("historic") or tags.get("man_made") or
-        tags.get("tourism") or tags.get("amenity") or
-        tags.get("leisure") or tags.get("building") or ""
-    )
-    is_landmark = _is_landmark(poi_type)
-    dist_mult   = 1.5 if is_landmark else 1.0
-
-    aspect_conf = _aspect_confidence_penalty(geometry, angle, bear)
-    in_fov      = angle < 60
-
-    rule = "unknown"
-    rule_description = ""
-
-    if dist < 30 and in_fov:
-        rule = "proximity_override_30m"
-        rule_description = f"distance {dist:.1f}m < 30m and in FOV → always visible"
-    elif dist < 50 and in_fov and size in ("small", "medium"):
-        rule = "proximity_override_50m"
-        rule_description = f"distance {dist:.1f}m < 50m, in FOV, size={size} → always visible"
-    elif cross_street and size == "medium":
-        rule = "cross_street_suppression"
-        rule_description = f"addr:street confirmed different street, size=medium → not visible"
-    elif poi.get("blocked_by") and size in ("small", "medium") and dist > 100:
-        rule = "occlusion"
-        rule_description = (
-            f"blocked by {poi.get('blocked_by')} and size={size} and dist {dist:.1f}m > 100m → not visible"
-        )
-    elif size == "very_large":
-        threshold = (1500 if in_fov else 800) * dist_mult
-        rule = "very_large_in_fov" if in_fov else "very_large_peripheral"
-        rule_description = (
-            f"very_large: threshold {threshold:.0f}m "
-            f"({'in FOV' if in_fov else 'peripheral'}, dist_mult={dist_mult}x), "
-            f"distance {dist:.1f}m → {'visible' if dist < threshold else 'not visible'}"
-        )
-    elif size == "large":
-        threshold = 600 * dist_mult
-        rule = "large"
-        rule_description = (
-            f"large: needs in_fov + dist < {threshold:.0f}m (dist_mult={dist_mult}x), "
-            f"in_fov={in_fov}, distance {dist:.1f}m → "
-            f"{'visible' if in_fov and dist < threshold else 'not visible'}"
-        )
-    elif size == "medium":
-        threshold = 300 * dist_mult
-        rule = "medium"
-        rule_description = (
-            f"medium: needs in_fov + dist < {threshold:.0f}m (dist_mult={dist_mult}x), "
-            f"in_fov={in_fov}, distance {dist:.1f}m → "
-            f"{'visible' if in_fov and dist < threshold else 'not visible'}"
-        )
-    else:
-        rule = "small"
-        rule_description = (
-            f"small: needs in_fov + dist < 80m + same_street, "
-            f"in_fov={in_fov}, distance {dist:.1f}m, same_street={same_street} → "
-            f"{'visible' if in_fov and dist < 80 and same_street else 'not visible'}"
-        )
-
-    is_vis, conf = _is_visible(
-        size         = size,
-        distance_m   = dist,
-        angle_deg    = angle,
-        same_street  = same_street,
-        blocked_by   = poi.get("blocked_by", []),
-        poi_type     = poi_type,
-        aspect_conf  = aspect_conf,
-        cross_street = cross_street,
+    xfm     = _get_utm_transformer(user_lat, user_lon)
+    is_vis, reason = _check_poi(
+        poi, user_lat, user_lon, user_heading,
+        obstacles=[], buildings={}, transformer=xfm,
     )
 
     return {
@@ -524,125 +634,11 @@ def diagnose_poi(
         "distance_m":       round(dist, 1),
         "bearing_deg":      round(bear, 1),
         "angle_deg":        round(angle, 1),
-        "in_fov":           in_fov,
+        "in_fov":           angle < FOV_HALF_DEG,
         "size":             size,
-        "size_reason":      size_reason,
-        "poi_type":         poi_type,
-        "is_landmark":      is_landmark,
-        "dist_mult":        dist_mult,
-        "same_street":      same_street,
-        "cross_street":     cross_street,
-        "street_info":      street_info,
-        "aspect_conf":      aspect_conf,
-        "rule":             rule,
-        "rule_description": rule_description,
+        "rule":             reason,
+        "rule_description": reason,
         "visible":          is_vis,
-        "confidence":       conf,
+        "confidence":       1.0 if is_vis else 0.0,
         "filter_now_says":  "YES" if is_vis else "NO",
     }
-
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-def filter_visible(
-    pois:         list[dict],
-    user_lat:     float,
-    user_lon:     float,
-    user_heading: float,
-    user_street:  str | None = None,
-) -> tuple[list[dict], list[dict]]:
-    """Filter POIs by geometric visibility rules with confidence scoring.
-
-    Each returned POI gains: distance_m, angle_deg, confidence, blocked_by.
-    Returns (visible, rejected), both sorted by distance_m ascending.
-    """
-    from utils.geoutils import haversine_meters, bearing
-
-    if not pois:
-        return [], []
-
-    # ── Step 1: enrich ───────────────────────────────────────────────────────
-    enriched = []
-    for poi in pois:
-        poi_lat = poi.get("lat", user_lat)
-        poi_lon = poi.get("lon", user_lon)
-
-        dist      = haversine_meters(user_lat, user_lon, poi_lat, poi_lon)
-        bear      = bearing(user_lat, user_lon, poi_lat, poi_lon)
-        angle     = (bear - user_heading + 360) % 360
-        if angle > 180:
-            angle = 360 - angle
-
-        tags     = poi.get("tags", {})
-        geometry = poi.get("geometry", [])
-        size     = _size_category(tags, geometry)
-
-        # Same-street check with normalisation
-        poi_street = tags.get("addr:street", "").strip()
-        if poi_street:
-            same_street  = _streets_match(user_street or "", poi_street)
-            cross_street = not same_street   # OSM confirmed a different street
-        else:
-            # No addr:street in OSM — assume same street if very close
-            same_street  = dist < 100
-            cross_street = False             # unknown — don't penalise
-
-        # poi_type for landmark detection — historic/man_made first so that
-        # a memorial or tower with tourism=attraction also gets landmark boost
-        poi_type = (
-            tags.get("historic") or tags.get("man_made") or
-            tags.get("tourism") or tags.get("amenity") or
-            tags.get("leisure") or tags.get("building") or ""
-        )
-
-        # Aspect ratio confidence penalty
-        aspect_conf = _aspect_confidence_penalty(geometry, angle, bear)
-
-        enriched.append({
-            **poi,
-            "distance_m":    round(dist, 1),
-            "angle_deg":     round(angle, 1),
-            "_size":         size,
-            "_same_street":  same_street,
-            "_cross_street": cross_street,
-            "_poi_type":     poi_type,
-            "_aspect_conf":  aspect_conf,
-        })
-
-    # ── Step 2: occlusion ────────────────────────────────────────────────────
-    enriched = _add_occlusion_hints(enriched)
-
-    # ── Step 3: visibility decision ──────────────────────────────────────────
-    visible:  list[dict] = []
-    rejected: list[dict] = []
-
-    for poi in enriched:
-        size         = poi.pop("_size")
-        same_street  = poi.pop("_same_street")
-        cross_street = poi.pop("_cross_street")
-        poi_type     = poi.pop("_poi_type")
-        aspect_conf  = poi.pop("_aspect_conf")
-
-        is_vis, conf = _is_visible(
-            size         = size,
-            distance_m   = poi["distance_m"],
-            angle_deg    = poi["angle_deg"],
-            same_street  = same_street,
-            blocked_by   = poi.get("blocked_by", []),
-            poi_type     = poi_type,
-            aspect_conf  = aspect_conf,
-            cross_street = cross_street,
-        )
-
-        poi["confidence"] = conf
-
-        if is_vis:
-            visible.append(poi)
-        else:
-            rejected.append({**poi, "filtered_reason": "not visible"})
-
-    visible.sort(key=lambda p: p["distance_m"])
-    rejected.sort(key=lambda p: p["distance_m"])
-    return visible, rejected

@@ -10,6 +10,7 @@ logger = logging.getLogger("tourai.api")
 _VIS_GRID   = 0.001
 _POI_GRID   = 0.001
 _HDG_BUCKET = 22.5
+_AREA_GRID  = 0.003   # ~333m — matches test_geoapify_visibility.py grid resolution
 
 
 class MemoryCache:
@@ -65,6 +66,13 @@ def poi_cache_key(lat: float, lon: float, radius: float) -> str:
     glat = round(lat / _POI_GRID) * _POI_GRID
     glon = round(lon / _POI_GRID) * _POI_GRID
     return f"poi:{glat:.4f}:{glon:.4f}:{int(radius)}"
+
+
+def area_cache_key(lat: float, lon: float) -> str:
+    """Key for the obstacle-buildings area cache (~333m grid cells)."""
+    glat = round(lat / _AREA_GRID) * _AREA_GRID
+    glon = round(lon / _AREA_GRID) * _AREA_GRID
+    return f"area:{glat:.4f}:{glon:.4f}"
 
 
 def story_cache_key(name: str, lat: float, lon: float) -> str:

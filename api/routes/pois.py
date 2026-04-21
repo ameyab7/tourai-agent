@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 import time
 import traceback
 from datetime import datetime, timezone
@@ -9,7 +10,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Query
 
 from api import metrics
-from api.cache import cache, poi_cache_key, vis_cache_key
+from api.cache import cache, poi_cache_key, vis_cache_key, area_cache_key
 from api.config import settings
 from api.logging_setup import correlation_id
 from api.models import (
@@ -20,16 +21,29 @@ from api.models import (
 )
 from utils import osrm
 from utils.visibility import filter_visible
-from utils.overpass import search_tall_buildings
+from utils.geoutils import haversine_meters
 
-import os
-if os.environ.get("GEOAPIFY_API_KEY"):
+# Source for named POIs
+import os as _os
+if _os.environ.get("GEOAPIFY_API_KEY"):
     from utils import geoapify as poi_source
+    from utils.geoapify import search_obstacle_buildings, fetch_building_geometry
+    _HAS_GEOAPIFY = True
 else:
-    from utils import overpass as poi_source  # type: ignore[no-redef]
+    from utils import overpass as poi_source   # type: ignore[no-redef]
+    _HAS_GEOAPIFY = False
+
+# Keep tall-buildings enrichment from overpass when available
+try:
+    from utils.overpass import search_tall_buildings as _search_tall_buildings
+    _HAS_TALL = True
+except ImportError:
+    _HAS_TALL = False
 
 router  = APIRouter()
 logger  = logging.getLogger("tourai.api")
+
+_MAX_OBSTACLE_BUILDINGS = 50   # geometry fetches per area cell (1 credit each)
 
 
 def _now_iso() -> str:
@@ -49,12 +63,63 @@ def _poi_to_out(p: dict) -> PoiOut:
     )
 
 
+async def _fetch_area_buildings(lat: float, lon: float) -> dict:
+    """
+    Fetch obstacle buildings + their footprint polygons for a 333m grid cell.
+    Returns {"buildings": {place_id: (name, wgs84_geom)}} or {"buildings": {}}.
+
+    Cost: 1 credit for the building list + 1 credit per geometry fetched.
+    Results are cached for area_cache_ttl (default 1 hour).
+    """
+    if not _HAS_GEOAPIFY:
+        return {"buildings": {}}
+
+    try:
+        raw = await search_obstacle_buildings(lat, lon, radius=200)
+    except Exception:
+        logger.warning("obstacle_buildings_failed", extra={"lat": lat, "lon": lon})
+        return {"buildings": {}}
+
+    if not raw:
+        return {"buildings": {}}
+
+    # Closest MAX buildings (geometry fetches are the expensive part)
+    raw.sort(key=lambda b: haversine_meters(lat, lon, b["lat"], b["lon"]))
+    candidates = raw[:_MAX_OBSTACLE_BUILDINGS]
+
+    # Fetch footprint polygons with limited concurrency (avoid bursting API)
+    sem = asyncio.Semaphore(5)
+
+    async def _one(b: dict):
+        async with sem:
+            try:
+                geom = await fetch_building_geometry(b["id"])
+                return b["id"], b["name"], geom
+            except Exception:
+                return None
+
+    results = await asyncio.gather(*(_one(b) for b in candidates))
+
+    buildings = {}
+    for r in results:
+        if r is not None:
+            pid, name, geom = r
+            if geom is not None:
+                buildings[pid] = (name, geom)
+
+    logger.info("area_buildings_fetched", extra={
+        "lat": round(lat, 4), "lon": round(lon, 4),
+        "candidates": len(candidates), "with_polygon": len(buildings),
+    })
+    return {"buildings": buildings}
+
+
 @router.post("/v1/visible-pois", response_model=VisiblePoisResponse)
 async def get_visible_pois(body: VisiblePoisRequest) -> VisiblePoisResponse:
     cid = correlation_id.get("-")
     t0  = time.perf_counter()
 
-    # 1. Visibility cache
+    # 1. Visibility cache (per heading bucket)
     vis_key = vis_cache_key(body.latitude, body.longitude, body.heading)
     cached  = await cache.get(vis_key)
     if cached:
@@ -73,10 +138,15 @@ async def get_visible_pois(body: VisiblePoisRequest) -> VisiblePoisResponse:
 
     metrics.cache_misses.labels(cache_type="visibility").inc()
 
-    # 2. POI fetch + street name in parallel
+    # 2. POI cache
     p_key = poi_cache_key(body.latitude, body.longitude, body.radius)
     pois  = await cache.get(p_key)
 
+    # 3. Area buildings cache (obstacle polygons for ray casting)
+    a_key     = area_cache_key(body.latitude, body.longitude)
+    area_data = await cache.get(a_key)
+
+    # ── Parallel fetch for anything that missed cache ──────────────────────────
     async def _fetch_pois():
         async with metrics.timed("overpass"):
             return await poi_source.search_nearby(body.latitude, body.longitude, body.radius)
@@ -86,35 +156,50 @@ async def get_visible_pois(body: VisiblePoisRequest) -> VisiblePoisResponse:
             async with metrics.timed("osrm"):
                 return await osrm.get_current_street(body.latitude, body.longitude)
         except Exception:
-            logger.warning("osrm_street_failed", extra={"lat": body.latitude, "lon": body.longitude})
+            logger.warning("osrm_street_failed")
             return None
 
-    if pois is None:
-        metrics.cache_misses.labels(cache_type="poi").inc()
-        async def _fetch_tall():
-            try:
-                return await asyncio.wait_for(
-                    search_tall_buildings(body.latitude, body.longitude, radius=1500, min_levels=15),
-                    timeout=5.0,
-                )
-            except (asyncio.TimeoutError, Exception):
-                logger.info("tall_buildings_skipped", extra={"reason": "timeout or error"})
-                return []
-
+    async def _fetch_tall():
+        if not _HAS_TALL:
+            return []
         try:
-            (pois, street, tall) = await asyncio.gather(
-                _fetch_pois(),
-                _fetch_street(),
-                _fetch_tall(),
+            return await asyncio.wait_for(
+                _search_tall_buildings(body.latitude, body.longitude, radius=1500, min_levels=15),
+                timeout=5.0,
             )
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
         except Exception:
-            logger.error("overpass_error", extra={"exc": traceback.format_exc()})
-            metrics.errors_total.labels(endpoint="/v1/visible-pois", error_type="overpass").inc()
-            raise HTTPException(status_code=502, detail="POI data temporarily unavailable")
+            return []
 
-        # Merge tall buildings — skip any already returned by Geoapify (match by name)
+    needs_pois = pois is None
+    needs_area = area_data is None
+
+    tasks: list = []
+    if needs_pois:
+        tasks.append(_fetch_pois())
+        tasks.append(_fetch_street())
+        tasks.append(_fetch_tall())
+    else:
+        tasks.append(_fetch_street())
+
+    if needs_area:
+        tasks.append(_fetch_area_buildings(body.latitude, body.longitude))
+
+    try:
+        results = await asyncio.gather(*tasks, return_exceptions=False)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception:
+        logger.error("fetch_error", extra={"exc": traceback.format_exc()})
+        metrics.errors_total.labels(endpoint="/v1/visible-pois", error_type="fetch").inc()
+        raise HTTPException(status_code=502, detail="POI data temporarily unavailable")
+
+    # Unpack results
+    idx = 0
+    if needs_pois:
+        pois   = results[idx];   idx += 1
+        street = results[idx];   idx += 1
+        tall   = results[idx];   idx += 1
+
         existing_names = {p["name"].lower() for p in pois}
         new_tall = [p for p in tall if p["name"].lower() not in existing_names]
         if new_tall:
@@ -122,20 +207,28 @@ async def get_visible_pois(body: VisiblePoisRequest) -> VisiblePoisResponse:
         pois = pois + new_tall
 
         await cache.set(p_key, pois, ttl=settings.poi_cache_ttl)
+        metrics.cache_misses.labels(cache_type="poi").inc()
     else:
+        street = results[idx];   idx += 1
         metrics.cache_hits.labels(cache_type="poi").inc()
-        street = await _fetch_street()
 
-    # 3. Visibility filter (pure Python — no I/O)
+    if needs_area:
+        area_data = results[idx]
+        await cache.set(a_key, area_data, ttl=settings.area_cache_ttl)
+
+    # 4. Visibility filter with ray casting
+    buildings = (area_data or {}).get("buildings") or None
+
     visible, _ = filter_visible(
         pois,
-        user_lat=body.latitude,
-        user_lon=body.longitude,
-        user_heading=body.heading,
-        user_street=street,
+        user_lat     = body.latitude,
+        user_lon     = body.longitude,
+        user_heading = body.heading,
+        buildings    = buildings,
+        user_street  = street,
     )
 
-    # 4. Cache and return
+    # 5. Cache and return
     result_payload = {
         "visible_pois":  [_poi_to_out(p).model_dump() for p in visible],
         "street_name":   street,
@@ -151,6 +244,8 @@ async def get_visible_pois(body: VisiblePoisRequest) -> VisiblePoisResponse:
         "visible_count": len(visible),
         "total_checked": len(pois),
         "cache_hit":     False,
+        "ray_casting":   _HAS_GEOAPIFY and buildings is not None,
+        "buildings_used": len(buildings) if buildings else 0,
         "elapsed_ms":    round((time.perf_counter() - t0) * 1000),
         "poi_names":     [p["name"] for p in result_payload["visible_pois"]],
     })

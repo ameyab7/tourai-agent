@@ -128,13 +128,14 @@ def _parse_feature(feature: dict) -> dict | None:
         return None
 
     return {
-        "id":       props.get("place_id", f"geo_{name}_{lat}_{lon}"),
-        "name":     name,
-        "lat":      float(lat),
-        "lon":      float(lon),
-        "tags":     tags,
-        "poi_type": _poi_type(tags),
-        "geometry": [],   # Geoapify is point-only; visibility falls back to tag-based sizing
+        "id":         props.get("place_id", f"geo_{name}_{lat}_{lon}"),
+        "name":       name,
+        "lat":        float(lat),
+        "lon":        float(lon),
+        "tags":       tags,
+        "categories": props.get("categories", []),   # Geoapify category list for visibility sizing
+        "poi_type":   _poi_type(tags),
+        "geometry":   [],
     }
 
 
@@ -190,3 +191,120 @@ async def search_nearby(
     pois = [p for f in features if (p := _parse_feature(f)) is not None]
     logger.info("geoapify_success", extra={"pois": len(pois), "features": len(features)})
     return pois
+
+
+# ---------------------------------------------------------------------------
+# Obstacle building fetch + geometry (used by visibility pipeline)
+# ---------------------------------------------------------------------------
+
+_DETAILS_URL = "https://api.geoapify.com/v2/place-details"
+
+# Module-level geometry cache — building polygons don't change; survives the
+# process lifetime so repeated requests for the same cell cost 0 extra credits.
+_bldg_geom_cache: dict[str, object] = {}   # place_id → shapely geom | None
+
+
+async def search_obstacle_buildings(
+    lat:    float,
+    lon:    float,
+    radius: float = 200,
+) -> list[dict]:
+    """
+    Fetch all buildings within `radius` metres — these are anonymous structures
+    (offices, garages, apartment blocks) used as ray-cast obstacles.
+    Returns list of {id, name, lat, lon}.  Returns [] on failure.
+    Cost: 1 Geoapify credit per call.
+    """
+    api_key = os.environ.get("GEOAPIFY_API_KEY", "").strip()
+    if not api_key:
+        return []
+
+    params = {
+        "categories": "building",
+        "filter":     f"circle:{lon},{lat},{int(radius)}",
+        "limit":      100,
+        "apiKey":     api_key,
+    }
+    try:
+        resp = await _http.get(_BASE_URL, params=params)
+        if resp.status_code == 402:
+            logger.error("geoapify_quota_exceeded_obstacles")
+            return []
+        resp.raise_for_status()
+        features = resp.json().get("features", [])
+    except Exception as e:
+        logger.warning("geoapify_obstacle_error", extra={"error": str(e)})
+        return []
+
+    buildings = []
+    for feat in features:
+        props  = feat.get("properties", {})
+        geom   = feat.get("geometry", {})
+        coords = geom.get("coordinates", [0.0, 0.0])
+        buildings.append({
+            "id":   props.get("place_id", ""),
+            "name": props.get("name") or props.get("formatted") or "building",
+            "lat":  coords[1],
+            "lon":  coords[0],
+        })
+
+    logger.info("geoapify_obstacles", extra={"count": len(buildings)})
+    return buildings
+
+
+async def fetch_building_geometry(place_id: str) -> object:
+    """
+    Fetch the building footprint polygon (Polygon or MultiPolygon) for a
+    Geoapify place_id.  Returns a shapely geometry or None if only a Point
+    is available.  Results are cached in-process indefinitely.
+    Cost: 1 Geoapify credit per uncached place_id.
+    """
+    if place_id in _bldg_geom_cache:
+        return _bldg_geom_cache[place_id]
+
+    api_key = os.environ.get("GEOAPIFY_API_KEY", "").strip()
+    if not api_key:
+        _bldg_geom_cache[place_id] = None
+        return None
+
+    try:
+        from shapely.geometry import shape as _shape
+    except ImportError:
+        _bldg_geom_cache[place_id] = None
+        return None
+
+    params = {
+        "id":       place_id,
+        "features": "details,geometry",
+        "apiKey":   api_key,
+    }
+    try:
+        resp = await _http.get(_DETAILS_URL, params=params)
+        if resp.status_code == 402:
+            logger.error("geoapify_quota_exceeded_geometry")
+            _bldg_geom_cache[place_id] = None
+            return None
+        resp.raise_for_status()
+        features = resp.json().get("features", [])
+    except Exception as e:
+        logger.warning("geoapify_geometry_error", extra={"place_id": place_id[:12], "error": str(e)})
+        _bldg_geom_cache[place_id] = None
+        return None
+
+    if not features:
+        _bldg_geom_cache[place_id] = None
+        return None
+
+    geom_data = features[0].get("geometry")
+    if not geom_data or geom_data.get("type") == "Point":
+        _bldg_geom_cache[place_id] = None
+        return None
+
+    try:
+        geom = _shape(geom_data)
+        _bldg_geom_cache[place_id] = geom
+        return geom
+    except Exception as e:
+        logger.warning("geoapify_geometry_parse_error", extra={"place_id": place_id[:12], "error": str(e)})
+        _bldg_geom_cache[place_id] = None
+        return None

@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
 from api.logging_setup import correlation_id
 from api.models import FeedbackDiagnosis, FeedbackRequest, FeedbackResponse
@@ -97,7 +97,7 @@ async def post_feedback(body: FeedbackRequest) -> FeedbackResponse:
         "filter_says":   trace["filter_now_says"],
         "agreement":     agreement,
         "rule":          trace["rule"],
-        "size":          trace["size"],
+        "size":          trace.get("size", ""),
         "distance_m":    trace["distance_m"],
         "angle_deg":     trace["angle_deg"],
         "already_fixed": already_fixed,
