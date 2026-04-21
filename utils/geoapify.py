@@ -97,7 +97,10 @@ def _is_interesting(tags: dict) -> bool:
             if key == "building" and val in _GENERIC_BUILDING_VALUES:
                 return any(t in tags for t in _ENRICHMENT_TAGS)
             if key == "tourism" and val in _GENERIC_TOURISM_VALUES:
-                return any(t in tags for t in _TOURISM_ENRICHMENT_TAGS)
+                return (
+                    any(t in tags for t in _TOURISM_ENRICHMENT_TAGS)
+                    and bool(tags.get("wikidata"))   # hard requirement
+                )
             return True
     return False
 
