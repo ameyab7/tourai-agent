@@ -47,6 +47,8 @@ from utils.geoutils import haversine_meters, bearing as _compass_bearing
 # =============================================================================
 
 FOV_HALF_DEG     = 90     # ±90° → full forward hemisphere
+SKYLINE_FOV_HALF = 120    # ±120° — relaxed; tall structures noticed off-center
+SKYLINE_MAX_DIST = 2000   # metres — max distance for skyline-visible POIs
 PARK_PROXIMITY_M = 80     # park visible if user within 80m of polygon boundary
 RAYCAST_MAX_DIST = 300    # metres — primary ray cast range
 RAY_TRUNCATE_M   = 2.5    # truncate ray short of target to prevent self-occlusion
@@ -74,6 +76,7 @@ _CAT_SIZE: dict[str, str] = {
     "man_made.water_tower":          "very_large",
     "man_made.lighthouse":           "very_large",
     "tourism.sights.lighthouse":     "very_large",
+    "building.skyscraper":           "very_large",
     "entertainment.museum":          "large",
     "entertainment.culture.theatre": "large",
     "entertainment.culture":         "large",
@@ -446,6 +449,48 @@ def _park_visible(
 
 
 # =============================================================================
+# Skyline visibility
+# =============================================================================
+
+def _is_skyline_poi(poi: dict) -> bool:
+    """
+    True for tall structures that are visible above the roofline — skyscrapers,
+    towers, very_large building-category POIs. These skip street-level ray casting
+    and use a generous distance + relaxed FOV instead.
+    """
+    tags = poi.get("tags", {})
+    cats = poi.get("categories", [])
+    return (
+        tags.get("building") in {"skyscraper", "tower"} or
+        tags.get("man_made") in {"tower"} or
+        (any(c.startswith("building") for c in cats) and _best_size(poi) == "very_large")
+    )
+
+
+def _skyline_visible(
+    poi:          dict,
+    user_lat:     float, user_lon: float,
+    user_heading: float,
+) -> tuple[bool, str]:
+    """
+    Skyline-level visibility: tall structures seen above the roofline.
+    Uses a relaxed FOV (±120°) and a generous 2 km distance cap.
+    No ray casting — assumes line of sight above building obstacles.
+    """
+    # Relaxed FOV — humans notice tall landmarks even slightly off-center
+    bear  = _compass_bearing(user_lat, user_lon, poi["lat"], poi["lon"])
+    delta = abs((bear - user_heading + 180) % 360 - 180)
+    if delta > SKYLINE_FOV_HALF:
+        return False, f"skyline: {delta:.0f}° outside ±{SKYLINE_FOV_HALF}° of heading {user_heading:.0f}°"
+
+    dist = haversine_meters(user_lat, user_lon, poi["lat"], poi["lon"])
+    if dist > SKYLINE_MAX_DIST:
+        return False, f"skyline: too far {dist:.0f}m (max {SKYLINE_MAX_DIST}m)"
+
+    return True, f"skyline: visible at {dist:.0f}m"
+
+
+# =============================================================================
 # Single-POI visibility decision
 # =============================================================================
 
@@ -459,12 +504,17 @@ def _check_poi(
 ) -> tuple[bool, str]:
     """
     Run all visibility gates in priority order:
-      1. FOV filter
+      0. Skyline short-circuit (skyscrapers/towers — own FOV + 2 km gate)
+      1. FOV filter (standard ±90°)
       2. Park special-case (proximity to polygon)
       3. Ray cast to nearest boundary point (or heuristic beyond 300m)
       4. Recognizability gate
     """
     dist = haversine_meters(user_lat, user_lon, poi["lat"], poi["lon"])
+
+    # 0. Skyline short-circuit — runs before standard FOV so relaxed 120° applies
+    if _is_skyline_poi(poi):
+        return _skyline_visible(poi, user_lat, user_lon, user_heading)
 
     # 1. FOV gate
     if not _in_fov(user_lat, user_lon, poi["lat"], poi["lon"], user_heading):
