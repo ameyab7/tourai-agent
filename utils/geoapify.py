@@ -71,8 +71,16 @@ _POI_VALUE_ALLOWLIST: dict[str, set[str]] = {
 }
 
 _GENERIC_BUILDING_VALUES = {"commercial", "office"}
+# tourism values that are too generic on their own — only keep if the feature
+# has at least one enrichment tag (wikidata, wikipedia, heritage, etc.)
+# This filters indoor exhibits, minor plaques, and roadside attractions while
+# keeping well-known places like Dealey Plaza that have wikidata entries.
+_GENERIC_TOURISM_VALUES  = {"attraction", "artwork"}
 _ENRICHMENT_TAGS = {"wikipedia", "wikidata", "description", "heritage",
                     "architect", "start_date", "historic", "tourism"}
+# Same set minus "tourism" itself — used when checking tourism=attraction/artwork
+# to avoid self-referential pass (the tourism tag is what triggered the check).
+_TOURISM_ENRICHMENT_TAGS = _ENRICHMENT_TAGS - {"tourism"}
 
 
 def _poi_type(tags: dict) -> str:
@@ -88,6 +96,8 @@ def _is_interesting(tags: dict) -> bool:
         if val in allowed:
             if key == "building" and val in _GENERIC_BUILDING_VALUES:
                 return any(t in tags for t in _ENRICHMENT_TAGS)
+            if key == "tourism" and val in _GENERIC_TOURISM_VALUES:
+                return any(t in tags for t in _TOURISM_ENRICHMENT_TAGS)
             return True
     return False
 

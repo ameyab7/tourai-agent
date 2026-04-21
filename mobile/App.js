@@ -280,6 +280,7 @@ export default function App() {
       // POIs that were in FOV don't linger after the user turns away.
       headingSub = await Location.watchHeadingAsync(hdg => {
         if (hdg.trueHeading < 0) return;
+        if (simActiveRef.current) return; // sim owns headingRef — don't overwrite or clear dots
         const prev = headingRef.current;
         headingRef.current = hdg.trueHeading;
         const delta = Math.abs(((hdg.trueHeading - prev) + 540) % 360 - 180);
