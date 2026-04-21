@@ -40,7 +40,6 @@ _CATEGORIES = ",".join([
     "natural",
     "building.historic",
     "building.office",         # Fountain Place, Chase Tower etc.
-    "building.skyscraper",     # explicit skyscraper category if Geoapify returns it
     "sport.stadium",
     "man_made.tower",          # Reunion Tower, Hyatt Regency ball etc.
     "man_made.bridge",
