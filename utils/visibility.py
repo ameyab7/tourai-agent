@@ -459,17 +459,37 @@ def _park_visible(
 
 def _is_skyline_poi(poi: dict) -> bool:
     """
-    True for tall structures that are visible above the roofline — skyscrapers,
-    towers, very_large building-category POIs. These skip street-level ray casting
-    and use a generous distance + relaxed FOV instead.
+    True for structures tall enough to be visible above the roofline.
+
+    Checks (in order):
+    1. Explicit OSM tags: building=skyscraper/tower, man_made=tower
+    2. OSM height data: height ≥ 100m OR building:levels ≥ 25
+    3. Geoapify category starts with "building" AND size resolves to very_large
     """
     tags = poi.get("tags", {})
     cats = poi.get("categories", [])
-    return (
-        tags.get("building") in {"skyscraper", "tower"} or
-        tags.get("man_made") in {"tower"} or
-        (any(c.startswith("building") for c in cats) and _best_size(poi) == "very_large")
-    )
+
+    if tags.get("building") in {"skyscraper", "tower"}:
+        return True
+    if tags.get("man_made") == "tower":
+        return True
+
+    try:
+        if float(tags.get("height", 0)) >= 100:
+            return True
+    except (ValueError, TypeError):
+        pass
+
+    try:
+        if int(tags.get("building:levels", 0)) >= 25:
+            return True
+    except (ValueError, TypeError):
+        pass
+
+    if any(c.startswith("building") for c in cats) and _best_size(poi) == "very_large":
+        return True
+
+    return False
 
 
 def _skyline_visible(

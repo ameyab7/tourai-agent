@@ -39,7 +39,6 @@ _CATEGORIES = ",".join([
     "heritage",
     "natural",
     "building.historic",
-    "building.office",         # Fountain Place, Chase Tower etc.
     "sport.stadium",
     "man_made.tower",          # Reunion Tower, Hyatt Regency ball etc.
     "man_made.bridge",
