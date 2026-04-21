@@ -151,10 +151,15 @@ def _best_size_from_tags(tags: dict) -> str:
 
 def _best_size(poi: dict) -> str:
     """Return best size bucket, preferring Geoapify categories over OSM tags."""
+    tags = poi.get("tags", {})
+    # Override: artwork / sculpture is always "small" even if co-tagged with
+    # broader cultural categories (e.g. an arts_centre that is also an artwork).
+    if tags.get("tourism") in ("artwork",) or tags.get("artwork_type"):
+        return "small"
     cats = poi.get("categories", [])
     if cats:
         return _best_size_from_cats(cats)
-    return _best_size_from_tags(poi.get("tags", {}))
+    return _best_size_from_tags(tags)
 
 
 # =============================================================================
@@ -584,6 +589,27 @@ def filter_visible(
     """
     if not pois:
         return [], []
+
+    # ── Debug dump ────────────────────────────────────────────────────────────
+    # Set env var TOURAI_VIS_DEBUG=1 to print a per-POI table to stderr.
+    # Columns: name | categories | size | recog_m | dist_m | skyline?
+    # Use this to spot missing landmarks (wrong categories) and oversized junk.
+    import os as _os
+    if _os.environ.get("TOURAI_VIS_DEBUG"):
+        import sys as _sys
+        print(f"\n{'─'*90}", file=_sys.stderr)
+        print(f"filter_visible  lat={user_lat:.5f} lon={user_lon:.5f} heading={user_heading:.1f}°  pois={len(pois)}", file=_sys.stderr)
+        print(f"{'NAME':<35} {'SIZE':<10} {'RECOG_M':<9} {'DIST_M':<8} {'SKYLINE':<8} CATEGORIES", file=_sys.stderr)
+        print(f"{'─'*90}", file=_sys.stderr)
+        for _p in sorted(pois, key=lambda p: haversine_meters(user_lat, user_lon, p["lat"], p["lon"])):
+            _dist  = haversine_meters(user_lat, user_lon, _p["lat"], _p["lon"])
+            _size  = _best_size(_p)
+            _recog = _RECOG_DIST[_size]
+            _sky   = "YES" if _is_skyline_poi(_p) else "-"
+            _cats  = ",".join(_p.get("categories", [])) or "(none)"
+            print(f"{_p['name']:<35} {_size:<10} {_recog:<9.0f} {_dist:<8.0f} {_sky:<8} {_cats}", file=_sys.stderr)
+        print(f"{'─'*90}\n", file=_sys.stderr)
+    # ── End debug dump ────────────────────────────────────────────────────────
 
     xfm = _get_utm_transformer(user_lat, user_lon)
 

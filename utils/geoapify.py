@@ -39,7 +39,11 @@ _CATEGORIES = ",".join([
     "heritage",
     "natural",
     "building.historic",
+    "building.office",         # Fountain Place, Chase Tower etc.
+    "building.skyscraper",     # explicit skyscraper category if Geoapify returns it
     "sport.stadium",
+    "man_made.tower",          # Reunion Tower, Hyatt Regency ball etc.
+    "man_made.bridge",
 ])
 
 _MAX_RESULTS = 100   # Geoapify max per request on free tier
