@@ -54,10 +54,10 @@ RAY_TRUNCATE_M   = 2.5    # truncate ray short of target to prevent self-occlusi
 # Recognizability: hard AND gate after visibility passes.
 # Even a clear sightline doesn't help if the POI is too far to identify.
 _RECOG_DIST: dict[str, float] = {
-    "very_large": 600.0,
-    "large":      250.0,
-    "medium":      80.0,
-    "small":       25.0,
+    "very_large": 800.0,
+    "large":      350.0,
+    "medium":     150.0,
+    "small":       40.0,
 }
 
 MAX_PARK_DIST_NO_POLY = 100.0   # fallback when no park polygon available
@@ -147,18 +147,11 @@ def _best_size_from_tags(tags: dict) -> str:
 
 
 def _best_size(poi: dict) -> str:
-    """
-    Return the CONSERVATIVE size bucket — the smaller of category-based and
-    tag-based estimates. When the two signals disagree, trust the smaller one
-    to avoid over-counting POI reach.
-    """
+    """Return best size bucket, preferring Geoapify categories over OSM tags."""
     cats = poi.get("categories", [])
-    tags = poi.get("tags", {})
     if cats:
-        size_cat = _best_size_from_cats(cats)
-        size_tag = _best_size_from_tags(tags)
-        return min(size_cat, size_tag, key=lambda s: _SIZE_RANK[s])
-    return _best_size_from_tags(tags)
+        return _best_size_from_cats(cats)
+    return _best_size_from_tags(poi.get("tags", {}))
 
 
 # =============================================================================
@@ -494,10 +487,6 @@ def _check_poi(
         )
     else:
         own_geom = _find_own_geom(poi["lat"], poi["lon"], buildings)
-        # Large/very_large POIs without a building polygon are unverifiable —
-        # too likely to be a false positive (indoor complex, underground, etc.)
-        if own_geom is None and _best_size(poi) in ("large", "very_large"):
-            return False, "no geometry for large POI"
         # Cast to nearest exterior boundary point — fixes "wrong facade" problem
         if own_geom is not None:
             bp = _nearest_boundary_point(user_lon, user_lat, own_geom)
@@ -562,7 +551,7 @@ def filter_visible(
         # centroids ± 0.0005° (~55m). Prevents buildings far from every POI
         # from being tested on every ray cast.
         if SHAPELY and bldg_utm and pois:
-            _BBOX_BUFFER = 0.0015  # ~150m — wide enough to catch obstacles near far POIs
+            _BBOX_BUFFER = 0.0005
             all_lats = [user_lat] + [p["lat"] for p in pois]
             all_lons = [user_lon] + [p["lon"] for p in pois]
             _min_lat = min(all_lats) - _BBOX_BUFFER
