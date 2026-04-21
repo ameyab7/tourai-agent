@@ -206,6 +206,7 @@ export default function App() {
     try {
       const pollHeading = headingRef.current;
       const pollLoc     = { ...loc };
+      console.log(`[App] poll lat=${pollLoc.lat.toFixed(5)} lon=${pollLoc.lon.toFixed(5)} heading=${pollHeading.toFixed(1)}`);
       const data = await fetchVisiblePois(pollLoc.lat, pollLoc.lon, pollHeading);
       lastPollHeadingRef.current = pollHeading;
       // Tag each POI with the location+heading at the time it was shown
@@ -215,11 +216,12 @@ export default function App() {
         _poll_lon:     pollLoc.lon,
         _poll_heading: pollHeading,
       }));
+      console.log(`[App] visible POIs (${pois.length}):`, pois.map(p => p.name));
       setVisiblePois(pois);
       setStreetName(data.street_name ?? null);
       setError(null);
     } catch (err) {
-      console.warn('API poll failed:', err.message);
+      console.error('[App] API poll failed:', err.message, err);
     }
   }, []);
 
@@ -313,6 +315,7 @@ export default function App() {
   // ── DEV ONLY — simulation handlers ───────────────────────────────────────
   // Called by SimulateWalk on each route step — overrides real GPS location.
   const handleSimStep = useCallback(({ lat, lon, heading }) => {
+    console.log(`[App] sim step lat=${lat.toFixed(5)} lon=${lon.toFixed(5)} heading=${heading.toFixed(1)}`);
     simActiveRef.current = true;
     headingRef.current = heading;
     locationRef.current = { lat, lon };
@@ -348,6 +351,7 @@ export default function App() {
   const handleReport = useCallback(async (poi) => {
     const loc = locationRef.current;
     if (!loc) throw new Error('Location not available');
+    console.log('[App] reporting false positive:', poi.name);
     return reportFalsePositive(poi, loc.lat, loc.lon, headingRef.current, streetName);
   }, [streetName]);
 
