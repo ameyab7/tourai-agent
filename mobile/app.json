@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "TourAI",
+    "slug": "tourai",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "bundleIdentifier": "com.tourai.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "TourAI needs your location to show nearby points of interest.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "TourAI needs your location to show nearby points of interest.",
+      }
+    },
+    "android": {
+      "package": "com.tourai.app",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "TourAI needs your location to show nearby points of interest."
+        }
+      ],
+      "expo-asset",
+      "expo-font"
+    ]
+  }
+}
