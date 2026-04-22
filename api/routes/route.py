@@ -5,10 +5,11 @@ Used by the mobile walk simulator (replaces the unreliable OSRM public demo).
 """
 
 import logging
-import os
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
+
+from api.config import settings
 
 router = APIRouter()
 logger = logging.getLogger("tourai.api")
@@ -28,7 +29,7 @@ async def get_route(
     Response matches the shape the mobile SimulateWalk expects:
       { code, routes: [{ distance, duration, geometry: { coordinates: [[lon,lat],...] } }] }
     """
-    api_key = os.environ.get("GEOAPIFY_API_KEY", "")
+    api_key = settings.geoapify_api_key
     if not api_key:
         raise HTTPException(status_code=503, detail="Routing not configured (no GEOAPIFY_API_KEY)")
 

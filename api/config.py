@@ -1,6 +1,6 @@
 """api/config.py — Application settings loaded from environment / .env file."""
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -8,6 +8,13 @@ class Settings(BaseSettings):
     groq_api_key:     str = Field(..., alias="GROQ_API_KEY")
     gemini_api_key:   str = Field("", alias="GEMINI_API_KEY")
     geoapify_api_key: str = Field("", alias="GEOAPIFY_API_KEY")
+
+    @field_validator("geoapify_api_key", mode="before")
+    @classmethod
+    def _clean_geoapify_key(cls, v: str) -> str:
+        # Railway can store keys with a stray leading ' =' (e.g. ' =abc123').
+        # Strip surrounding whitespace and any leading '=' characters.
+        return str(v).strip().lstrip("=").strip()
 
     cors_origins:    list[str] = ["http://localhost:3000", "http://localhost:8081"]
     rate_limit_rpm:  int = 100
