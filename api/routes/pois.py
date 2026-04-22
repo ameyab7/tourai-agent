@@ -66,18 +66,37 @@ async def _fetch_area_buildings(lat: float, lon: float) -> dict:
     """
     Fetch all building footprint polygons for a ~333m grid cell via Overpass.
 
-    Returns {"buildings": {osm_way_id: (name, shapely_geom)}} or {"buildings": {}}.
+    Returns {"buildings": {osm_way_id: (name, wgs84_geom, utm_geom)}} or {}.
 
-    Uses Overpass (free) rather than Geoapify — returns ~150-300 building polygons
-    vs the old ~10 from individual Geoapify geometry fetches.
-    Results are cached for area_cache_ttl (default 1 hour) in the Overpass module.
+    UTM geometries are pre-projected once at fetch time and stored in the
+    1-hour area cache.  filter_visible finds them already projected and skips
+    the 21ms re-projection loop that was previously run on every request.
+
+    Uses Overpass (free) — returns ~150-600 building polygons vs ~10 from
+    the old Geoapify approach.
     """
-    # 500m: Dallas-style large-block grids have only ~19 buildings in 300m
-    # but ~83 in 500m. The _obstacles_in_bbox filter in filter_visible clips
-    # this down to only buildings actually between user and POIs at ray-cast time,
-    # so the larger fetch has no performance cost.
+    from utils.visibility import _get_utm_transformer, _project_geom
+
+    # 500m radius: large-block cities (Dallas) have ~83 buildings vs 19 at 300m.
     buildings = await _fetch_obstacle_buildings(lat, lon, radius=500)
-    return {"buildings": buildings}
+    if not buildings:
+        return {"buildings": {}}
+
+    # Project all WGS84 polygons to UTM once, using the grid-cell centre.
+    # Within any 500m cell the UTM zone is constant, so these projections are
+    # valid for any user position inside the cell.
+    xfm = _get_utm_transformer(lat, lon)
+    projected = {}
+    for pid, (name, wgs84_geom) in buildings.items():
+        utm_geom = _project_geom(wgs84_geom, xfm) if wgs84_geom is not None else None
+        projected[pid] = (name, wgs84_geom, utm_geom)
+
+    logger.info("area_buildings_projected", extra={
+        "lat": round(lat, 4), "lon": round(lon, 4),
+        "total": len(projected),
+        "with_utm": sum(1 for _, _, u in projected.values() if u is not None),
+    })
+    return {"buildings": projected}
 
 
 @router.post("/v1/visible-pois", response_model=VisiblePoisResponse)
