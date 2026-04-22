@@ -21,19 +21,20 @@ from api.models import (
 )
 from utils import osrm
 from utils.visibility import filter_visible
-from utils.geoutils import haversine_meters
 
 # Source for named POIs
 import os as _os
 if _os.environ.get("GEOAPIFY_API_KEY"):
     from utils import geoapify as poi_source
-    from utils.geoapify import search_obstacle_buildings, fetch_building_geometry
     _HAS_GEOAPIFY = True
 else:
     from utils import overpass as poi_source   # type: ignore[no-redef]
     _HAS_GEOAPIFY = False
 
-# Keep tall-buildings enrichment from overpass when available
+# Obstacle buildings always come from Overpass (free, complete polygon coverage)
+from utils.overpass import fetch_obstacle_buildings as _fetch_obstacle_buildings
+
+# Tall-buildings enrichment from Overpass
 try:
     from utils.overpass import search_tall_buildings as _search_tall_buildings
     _HAS_TALL = True
@@ -42,8 +43,6 @@ except ImportError:
 
 router  = APIRouter()
 logger  = logging.getLogger("tourai.api")
-
-_MAX_OBSTACLE_BUILDINGS = 50   # geometry fetches per area cell (1 credit each)
 
 
 def _now_iso() -> str:
@@ -65,52 +64,19 @@ def _poi_to_out(p: dict) -> PoiOut:
 
 async def _fetch_area_buildings(lat: float, lon: float) -> dict:
     """
-    Fetch obstacle buildings + their footprint polygons for a 333m grid cell.
-    Returns {"buildings": {place_id: (name, wgs84_geom)}} or {"buildings": {}}.
+    Fetch all building footprint polygons for a ~333m grid cell via Overpass.
 
-    Cost: 1 credit for the building list + 1 credit per geometry fetched.
-    Results are cached for area_cache_ttl (default 1 hour).
+    Returns {"buildings": {osm_way_id: (name, shapely_geom)}} or {"buildings": {}}.
+
+    Uses Overpass (free) rather than Geoapify — returns ~150-300 building polygons
+    vs the old ~10 from individual Geoapify geometry fetches.
+    Results are cached for area_cache_ttl (default 1 hour) in the Overpass module.
     """
-    if not _HAS_GEOAPIFY:
-        return {"buildings": {}}
-
-    try:
-        raw = await search_obstacle_buildings(lat, lon, radius=200)
-    except Exception:
-        logger.warning("obstacle_buildings_failed", extra={"lat": lat, "lon": lon})
-        return {"buildings": {}}
-
-    if not raw:
-        return {"buildings": {}}
-
-    # Closest MAX buildings (geometry fetches are the expensive part)
-    raw.sort(key=lambda b: haversine_meters(lat, lon, b["lat"], b["lon"]))
-    candidates = raw[:_MAX_OBSTACLE_BUILDINGS]
-
-    # Fetch footprint polygons with limited concurrency (avoid bursting API)
-    sem = asyncio.Semaphore(5)
-
-    async def _one(b: dict):
-        async with sem:
-            try:
-                geom = await fetch_building_geometry(b["id"])
-                return b["id"], b["name"], geom
-            except Exception:
-                return None
-
-    results = await asyncio.gather(*(_one(b) for b in candidates))
-
-    buildings = {}
-    for r in results:
-        if r is not None:
-            pid, name, geom = r
-            if geom is not None:
-                buildings[pid] = (name, geom)
-
-    logger.info("area_buildings_fetched", extra={
-        "lat": round(lat, 4), "lon": round(lon, 4),
-        "candidates": len(candidates), "with_polygon": len(buildings),
-    })
+    # 500m: Dallas-style large-block grids have only ~19 buildings in 300m
+    # but ~83 in 500m. The _obstacles_in_bbox filter in filter_visible clips
+    # this down to only buildings actually between user and POIs at ray-cast time,
+    # so the larger fetch has no performance cost.
+    buildings = await _fetch_obstacle_buildings(lat, lon, radius=500)
     return {"buildings": buildings}
 
 
@@ -244,7 +210,7 @@ async def get_visible_pois(body: VisiblePoisRequest) -> VisiblePoisResponse:
         "visible_count": len(visible),
         "total_checked": len(pois),
         "cache_hit":     False,
-        "ray_casting":   _HAS_GEOAPIFY and buildings is not None,
+        "ray_casting":   buildings is not None and len(buildings) > 0,
         "buildings_used": len(buildings) if buildings else 0,
         "elapsed_ms":    round((time.perf_counter() - t0) * 1000),
         "poi_names":     [p["name"] for p in result_payload["visible_pois"]],

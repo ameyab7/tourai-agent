@@ -457,38 +457,144 @@ def _park_visible(
 # Skyline visibility
 # =============================================================================
 
+def _get_building_height_meters(tags: dict) -> Optional[float]:
+    """
+    Parse building height from OSM tags. Returns metres or None.
+
+    Priority:
+      1. height tag — handles "100", "100 m", "328 ft", "328'"
+      2. building:levels × floor-height estimate (residential 3.0m, office 3.8m, else 3.5m)
+      3. roof:height fallback
+    """
+    # STEP 1: Explicit height tag
+    height = tags.get("height")
+    if height:
+        try:
+            if isinstance(height, str):
+                h = height.strip().lower()
+                if "ft" in h or "'" in h:
+                    num = float("".join(c for c in h if c.isdigit() or c == "."))
+                    result = num * 0.3048
+                    logger.debug("height_parse: tag=%r  ft→m  raw=%r  result=%.1fm", height, num, result)
+                    return result
+                elif "m" in h:
+                    num = float("".join(c for c in h if c.isdigit() or c == "."))
+                    logger.debug("height_parse: tag=%r  explicit_m  result=%.1fm", height, num)
+                    return num
+                else:
+                    result = float(h)
+                    logger.debug("height_parse: tag=%r  numeric  result=%.1fm", height, result)
+                    return result
+            result = float(height)
+            logger.debug("height_parse: tag=%r  numeric(non-str)  result=%.1fm", height, result)
+            return result
+        except (ValueError, TypeError) as e:
+            logger.debug("height_parse: tag=%r  parse_error=%s", height, e)
+
+    # STEP 2: building:levels × floor-height estimate
+    levels = tags.get("building:levels")
+    if levels:
+        try:
+            num_levels = float(levels)
+            btype = tags.get("building", "")
+            if btype in {"apartments", "residential", "house"}:
+                floor_height = 3.0
+            elif btype in {"office", "commercial", "skyscraper"}:
+                floor_height = 3.8
+            else:
+                floor_height = 3.5
+            result = num_levels * floor_height
+            logger.debug(
+                "height_parse: levels=%s  btype=%r  floor_h=%.1f  result=%.1fm",
+                levels, btype, floor_height, result,
+            )
+            return result
+        except (ValueError, TypeError) as e:
+            logger.debug("height_parse: levels=%r  parse_error=%s", levels, e)
+
+    # STEP 3: roof:height fallback
+    roof_height = tags.get("roof:height")
+    if roof_height:
+        try:
+            result = float(roof_height)
+            logger.debug("height_parse: roof:height=%r  result=%.1fm", roof_height, result)
+            return result
+        except (ValueError, TypeError) as e:
+            logger.debug("height_parse: roof:height=%r  parse_error=%s", roof_height, e)
+
+    logger.debug("height_parse: no usable height tags (height=%r, levels=%r, roof_height=%r)",
+                 tags.get("height"), tags.get("building:levels"), tags.get("roof:height"))
+    return None
+
+
 def _is_skyline_poi(poi: dict) -> bool:
     """
     True for structures tall enough to be visible above the roofline.
 
-    Checks (in order):
-    1. Explicit OSM tags: building=skyscraper/tower, man_made=tower
-    2. OSM height data: height ≥ 100m OR building:levels ≥ 25
-    3. Geoapify category starts with "building" AND size resolves to very_large
+    Four tiers (in priority order):
+      1. Explicit OSM tags: building=skyscraper/tower, man_made=tower/lighthouse/
+         communications_tower/water_tower/cooling_tower, tower:type=observation/
+         communication/bell_tower
+      2. Height ≥ 80m (parsed from height tag, building:levels estimate, or roof:height)
+      3. Prominence: has architect/heritage/landmark tag AND size is large/very_large
+      4. Category fallback: any "building.*" Geoapify category AND size == very_large
     """
     tags = poi.get("tags", {})
     cats = poi.get("categories", [])
+    name = poi.get("name", "<unnamed>")
 
-    if tags.get("building") in {"skyscraper", "tower"}:
+    # TIER 1: Explicit tags
+    bval = tags.get("building")
+    if bval in {"skyscraper", "tower"}:
+        logger.debug("skyline[%s]: TIER1 building=%r", name, bval)
         return True
-    if tags.get("man_made") == "tower":
+    mm = tags.get("man_made")
+    if mm in {"tower", "lighthouse", "communications_tower", "water_tower", "cooling_tower"}:
+        logger.debug("skyline[%s]: TIER1 man_made=%r", name, mm)
+        return True
+    tt = tags.get("tower:type")
+    if tt in {"observation", "communication", "bell_tower"}:
+        logger.debug("skyline[%s]: TIER1 tower:type=%r", name, tt)
         return True
 
-    try:
-        if float(tags.get("height", 0)) >= 100:
+    # TIER 2: Height ≥ 80m
+    height = _get_building_height_meters(tags)
+    if height is not None:
+        if height >= 80:
+            logger.debug("skyline[%s]: TIER2 height=%.1fm ≥ 80m → YES", name, height)
             return True
-    except (ValueError, TypeError):
-        pass
+        else:
+            logger.debug("skyline[%s]: TIER2 height=%.1fm < 80m → not skyline via height", name, height)
+    else:
+        logger.debug("skyline[%s]: TIER2 no height data", name)
 
-    try:
-        if int(tags.get("building:levels", 0)) >= 25:
+    # TIER 3: Prominence — noteworthy building with large footprint
+    if tags.get("building"):
+        enrichment_keys = ("architect", "building:architecture", "heritage", "landmark")
+        matched_key = next((k for k in enrichment_keys if tags.get(k)), None)
+        if matched_key:
+            size = _best_size(poi)
+            if size in {"very_large", "large"}:
+                logger.debug("skyline[%s]: TIER3 building + %s=%r + size=%s → YES",
+                             name, matched_key, tags.get(matched_key), size)
+                return True
+            else:
+                logger.debug("skyline[%s]: TIER3 building + %s=%r but size=%s (need large/very_large) → NO",
+                             name, matched_key, tags.get(matched_key), size)
+        else:
+            logger.debug("skyline[%s]: TIER3 building=%r but no enrichment tags", name, tags.get("building"))
+
+    # TIER 4: Category fallback — generic "building.*" category but classified very_large
+    bldg_cats = [c for c in cats if c.startswith("building")]
+    if bldg_cats:
+        size = _best_size(poi)
+        if size == "very_large":
+            logger.debug("skyline[%s]: TIER4 cats=%r + size=very_large → YES", name, bldg_cats)
             return True
-    except (ValueError, TypeError):
-        pass
+        else:
+            logger.debug("skyline[%s]: TIER4 cats=%r but size=%s (need very_large) → NO", name, bldg_cats, size)
 
-    if any(c.startswith("building") for c in cats) and _best_size(poi) == "very_large":
-        return True
-
+    logger.debug("skyline[%s]: all tiers failed → NOT skyline", name)
     return False
 
 

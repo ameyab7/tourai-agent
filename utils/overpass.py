@@ -285,6 +285,139 @@ async def search_nearby(
     return []
 
 
+# ---------------------------------------------------------------------------
+# Obstacle buildings — all building polygons in a radius for ray casting
+# ---------------------------------------------------------------------------
+
+# Shapely import (optional — graceful no-op when not installed)
+try:
+    from shapely.geometry import Polygon as _Polygon
+    _SHAPELY_OK = True
+except ImportError:
+    _SHAPELY_OK = False
+
+# Query: all building ways with polygon geometry, no name filter.
+# `out geom` returns the full node list so we can build Shapely polygons
+# without a second API call.
+_QUERY_OBSTACLE_BUILDINGS = """\
+[out:json][timeout:15];
+way(around:{radius},{lat},{lon})[building];
+out geom;
+"""
+
+# Module-level cache: grid_key → {"buildings": dict, "ts": float}
+_obstacle_cache: dict[tuple, dict] = {}
+_OBSTACLE_CACHE_TTL  = 3600   # 1 hour — building footprints don't change
+_OBSTACLE_CACHE_GRID = 0.003  # ~333m grid cells (same as area_cache in api/cache.py)
+
+
+def _obstacle_cache_key(lat: float, lon: float) -> tuple:
+    g = _OBSTACLE_CACHE_GRID
+    return (round(lat / g) * g, round(lon / g) * g)
+
+
+async def fetch_obstacle_buildings(
+    lat:    float,
+    lon:    float,
+    radius: float = 500,
+) -> dict:
+    """
+    Return all building polygons within *radius* metres as a dict suitable
+    for passing directly to ``filter_visible(buildings=...)``.
+
+    Format: ``{osm_way_id_str: (name, shapely_Polygon_or_None)}``
+
+    - Uses the free Overpass API — zero credit cost.
+    - Returns ~150–300 polygons vs ~10 from the old Geoapify approach.
+    - Results are cached for 1 hour per ~333m grid cell.
+    - Returns {} on failure — never raises.
+    - Shares the module-level rate limiter with search_nearby.
+    """
+    if not (-90 <= lat <= 90) or not (-180 <= lon <= 180) or radius <= 0:
+        return {}
+
+    ck     = _obstacle_cache_key(lat, lon)
+    cached = _obstacle_cache.get(ck)
+    if cached and (time.monotonic() - cached["ts"]) < _OBSTACLE_CACHE_TTL:
+        logger.debug("obstacle_cache_hit", extra={"key": ck, "count": len(cached["buildings"])})
+        return cached["buildings"]
+
+    await _acquire_slot()
+
+    query = _QUERY_OBSTACLE_BUILDINGS.format(lat=lat, lon=lon, radius=int(radius))
+
+    # overpass-api.de (Apache front-end) returns 406 if Accept is not set explicitly.
+    _hdrs = {"Accept": "application/json, */*", "User-Agent": "TourAI/1.0"}
+
+    # 10s per-mirror timeout: aggressive enough to fail fast to the next mirror,
+    # generous enough for a 300m building query on an uncongested server.
+    async with httpx.AsyncClient(timeout=10, headers=_hdrs) as client:
+        for mirror in _available_mirrors():
+            try:
+                resp = await client.post(mirror, data={"data": query})
+
+                if resp.status_code == 429:
+                    _cool_mirror(mirror)
+                    continue
+                if resp.status_code >= 500:
+                    _cool_mirror(mirror)
+                    continue
+                if resp.status_code >= 400:
+                    # Don't abort — 406 from one mirror may be transient; try the next
+                    logger.warning("obstacle_buildings_http_error",
+                                   extra={"status": resp.status_code, "mirror": mirror})
+                    continue
+
+                elements = resp.json().get("elements", [])
+                buildings: dict = {}
+
+                for el in elements:
+                    way_id = str(el.get("id", ""))
+                    if not way_id:
+                        continue
+                    tags    = el.get("tags", {})
+                    name    = tags.get("name") or tags.get("building") or "building"
+                    geom_pts = el.get("geometry", [])
+
+                    polygon = None
+                    if _SHAPELY_OK and len(geom_pts) >= 3:
+                        try:
+                            coords  = [(pt["lon"], pt["lat"]) for pt in geom_pts]
+                            polygon = _Polygon(coords)
+                            if not polygon.is_valid:
+                                polygon = polygon.buffer(0)   # fix self-intersections
+                        except Exception:
+                            polygon = None
+
+                    buildings[way_id] = (name, polygon)
+
+                _obstacle_cache[ck] = {"buildings": buildings, "ts": time.monotonic()}
+                logger.info(
+                    "obstacle_buildings_fetched",
+                    extra={
+                        "lat":    round(lat, 4),
+                        "lon":    round(lon, 4),
+                        "mirror": mirror,
+                        "total":  len(elements),
+                        "with_polygon": sum(1 for _, g in buildings.values() if g is not None),
+                    },
+                )
+                return buildings
+
+            except httpx.TimeoutException:
+                _cool_mirror(mirror)
+                logger.warning("obstacle_buildings_timeout", extra={"mirror": mirror})
+            except httpx.ConnectError:
+                _mirror_backoff[mirror] = time.monotonic() + 3600
+                logger.info("obstacle_buildings_mirror_unreachable", extra={"mirror": mirror})
+            except Exception as e:
+                logger.warning("obstacle_buildings_error",
+                               extra={"mirror": mirror, "error": str(e)})
+
+    logger.warning("obstacle_buildings_all_failed", extra={"lat": lat, "lon": lon})
+    return {}
+
+
 async def search_tall_buildings(
     lat: float,
     lon: float,
