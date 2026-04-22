@@ -169,7 +169,7 @@ async def search_nearby(
     if not (-90 <= lat <= 90) or not (-180 <= lon <= 180) or radius <= 0:
         raise ValueError(f"Invalid inputs: lat={lat}, lon={lon}, radius={radius}")
 
-    api_key = os.environ.get("GEOAPIFY_API_KEY", "").strip()
+    api_key = os.environ.get("GEOAPIFY_API_KEY", "").strip().lstrip("=").strip()
     if not api_key:
         raise RuntimeError("GEOAPIFY_API_KEY is not set")
 
@@ -227,7 +227,7 @@ async def search_obstacle_buildings(
     Returns list of {id, name, lat, lon}.  Returns [] on failure.
     Cost: 1 Geoapify credit per call.
     """
-    api_key = os.environ.get("GEOAPIFY_API_KEY", "").strip()
+    api_key = os.environ.get("GEOAPIFY_API_KEY", "").strip().lstrip("=").strip()
     if not api_key:
         return []
 
@@ -274,7 +274,7 @@ async def fetch_building_geometry(place_id: str) -> object:
     if place_id in _bldg_geom_cache:
         return _bldg_geom_cache[place_id]
 
-    api_key = os.environ.get("GEOAPIFY_API_KEY", "").strip()
+    api_key = os.environ.get("GEOAPIFY_API_KEY", "").strip().lstrip("=").strip()
     if not api_key:
         _bldg_geom_cache[place_id] = None
         return None
