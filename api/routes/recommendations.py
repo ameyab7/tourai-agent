@@ -1,7 +1,6 @@
 """api/routes/recommendations.py — POST /v1/recommendations"""
 
 import asyncio
-import json
 import logging
 import math
 from datetime import datetime, timezone
@@ -11,7 +10,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from api.auth import get_current_user
-from api.config import settings
 from api.supabase_client import get_supabase
 from utils.golden_hour import get_light_windows
 from utils.weather import get_conditions
@@ -20,13 +18,140 @@ router = APIRouter()
 logger = logging.getLogger("tourai.api")
 
 
-def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    R  = 6371.0
-    φ1, φ2 = math.radians(lat1), math.radians(lat2)
-    dφ = math.radians(lat2 - lat1)
-    dλ = math.radians(lon2 - lon1)
-    a  = math.sin(dφ / 2) ** 2 + math.cos(φ1) * math.cos(φ2) * math.sin(dλ / 2) ** 2
-    return R * 2 * math.asin(math.sqrt(a))
+# ---------------------------------------------------------------------------
+# Scoring tables
+# ---------------------------------------------------------------------------
+
+# OSM poi_type / tag value → interest categories
+_TYPE_TO_INTERESTS: dict[str, set[str]] = {
+    "park":             {"nature", "hiking", "photography", "social"},
+    "nature_reserve":   {"nature", "hiking", "photography"},
+    "garden":           {"nature", "photography", "relaxed"},
+    "viewpoint":        {"photography", "nature", "architecture"},
+    "peak":             {"hiking", "nature", "photography"},
+    "beach":            {"nature", "photography", "social"},
+    "museum":           {"history", "culture", "architecture"},
+    "art_gallery":      {"culture", "photography", "architecture"},
+    "gallery":          {"culture", "photography"},
+    "theatre":          {"culture", "social"},
+    "cinema":           {"culture", "social"},
+    "library":          {"culture", "history"},
+    "historic":         {"history", "architecture", "photography"},
+    "monument":         {"history", "architecture", "photography"},
+    "memorial":         {"history"},
+    "castle":           {"history", "architecture", "photography"},
+    "ruins":            {"history", "photography"},
+    "archaeological_site": {"history"},
+    "restaurant":       {"food", "social"},
+    "cafe":             {"food", "social"},
+    "bakery":           {"food"},
+    "pub":              {"social", "food"},
+    "bar":              {"social"},
+    "marketplace":      {"food", "social", "shopping"},
+    "mall":             {"shopping"},
+    "sports_centre":    {"sports"},
+    "stadium":          {"sports", "social"},
+    "swimming_pool":    {"sports"},
+    "pitch":            {"sports"},
+    "attraction":       {"culture", "photography"},
+    "artwork":          {"culture", "photography", "architecture"},
+}
+
+# Mood → which interests to boost for scoring
+_MOOD_BOOSTS: dict[str, set[str]] = {
+    "adventurous":   {"nature", "hiking", "sports", "photography"},
+    "relaxed":       {"culture", "history", "food", "architecture"},
+    "spontaneous":   {"food", "social", "shopping", "culture", "nature"},
+    "social":        {"social", "food", "shopping"},
+    "photography":   {"photography", "nature", "architecture", "history"},
+}
+
+# Interests that benefit from golden hour / good light
+_LIGHT_SENSITIVE = {"photography", "nature", "architecture"}
+
+# Interests that benefit from clear weather
+_OUTDOOR_INTERESTS = {"nature", "hiking", "photography", "sports"}
+
+
+def _poi_interests(poi: dict) -> set[str]:
+    """Derive interest categories from a POI's type and OSM tags."""
+    cats: set[str] = set()
+    poi_type = poi.get("poi_type", "").lower()
+    cats |= _TYPE_TO_INTERESTS.get(poi_type, set())
+
+    tags = poi.get("tags", {})
+    for key in ("tourism", "amenity", "leisure", "historic", "natural"):
+        val = tags.get(key, "").lower()
+        if val:
+            cats |= _TYPE_TO_INTERESTS.get(val, set())
+
+    return cats
+
+
+def _score_poi(
+    poi: dict,
+    user_interests: list[str],
+    mood: str,
+    light: dict,
+    weather: dict,
+) -> tuple[float, list[str]]:
+    """Return (score, reason_parts) for a single POI."""
+    score   = 0.0
+    reasons: list[str] = []
+    cats    = _poi_interests(poi)
+    mood_boosts = _MOOD_BOOSTS.get(mood, set())
+
+    # --- Interest match (+2 per matched interest) ---
+    matched = [i for i in user_interests if i in cats]
+    if matched:
+        score += len(matched) * 2.0
+        label  = matched[0].replace("_", " ")
+        reasons.append(f"matches your interest in {label}")
+
+    # --- Mood alignment (+1.5) ---
+    if cats & mood_boosts:
+        score += 1.5
+        if not matched:
+            # Only add mood reason if no interest reason already covers it
+            reasons.append(f"great for a {mood} mood")
+
+    # --- Light conditions ---
+    if cats & _LIGHT_SENSITIVE:
+        if light["active"]:
+            score += 3.0
+            reasons.append(f"{light['label']} is happening right now")
+        elif light["minutes_away"] is not None and light["minutes_away"] <= 60:
+            score += 1.5
+            reasons.append(f"{light['label']} in {light['minutes_away']} min")
+
+    # --- Clear weather boost for outdoor spots ---
+    if weather["is_clear"] and cats & _OUTDOOR_INTERESTS:
+        score += 1.0
+        if len(reasons) == 0:
+            reasons.append(f"{weather['description'].lower()} — perfect conditions")
+
+    # --- Low-crowd heuristic (weekday before 11 AM) ---
+    now = datetime.now(timezone.utc)
+    if now.weekday() < 5 and now.hour < 11:
+        score += 0.5
+        if not reasons:
+            reasons.append("low crowds this time of day")
+
+    # --- Distance penalty (slight preference for closer places) ---
+    dist_km = poi.get("distance_km", 0)
+    score  -= dist_km * 0.05
+
+    return score, reasons
+
+
+def _build_reason(poi: dict, reasons: list[str]) -> str:
+    if not reasons:
+        poi_type = poi.get("poi_type", "spot").replace("_", " ")
+        return f"Popular {poi_type} nearby"
+    # Capitalise and join up to 2 reasons cleanly
+    parts = reasons[:2]
+    parts[0] = parts[0].capitalize()
+    return " · ".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -50,6 +175,7 @@ class RecommendationCard(BaseModel):
     distance_km:  float
     reason:       str
     conditions:   dict
+    score:        float
 
 
 class RecommendationsResponse(BaseModel):
@@ -78,6 +204,15 @@ out center 100;
 """
 
 
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    R   = 6371.0
+    φ1, φ2 = math.radians(lat1), math.radians(lat2)
+    dφ  = math.radians(lat2 - lat1)
+    dλ  = math.radians(lon2 - lon1)
+    a   = math.sin(dφ / 2) ** 2 + math.cos(φ1) * math.cos(φ2) * math.sin(dλ / 2) ** 2
+    return R * 2 * math.asin(math.sqrt(a))
+
+
 async def _fetch_pois(lat: float, lon: float, radius_m: int) -> list[dict]:
     query = _QUERY.format(radius=radius_m, lat=lat, lon=lon)
     for mirror in _OVERPASS_MIRRORS:
@@ -89,12 +224,14 @@ async def _fetch_pois(lat: float, lon: float, radius_m: int) -> list[dict]:
                     headers={"Accept": "application/json"},
                 )
                 if r.status_code in (406, 429, 500, 502, 503, 504):
-                    logger.warning("overpass_mirror_skipped", extra={"mirror": mirror, "status": r.status_code})
+                    logger.warning("overpass_mirror_skipped", extra={
+                        "mirror": mirror, "status": r.status_code,
+                    })
                     continue
                 r.raise_for_status()
-                elements = r.json().get("elements", [])
+
                 pois = []
-                for el in elements:
+                for el in r.json().get("elements", []):
                     name = el.get("tags", {}).get("name", "").strip()
                     if not name:
                         continue
@@ -103,9 +240,11 @@ async def _fetch_pois(lat: float, lon: float, radius_m: int) -> list[dict]:
                     if not clat or not clon:
                         continue
                     tags     = el.get("tags", {})
-                    poi_type = (tags.get("tourism") or tags.get("amenity") or
-                                tags.get("leisure") or tags.get("historic") or
-                                tags.get("natural") or "place")
+                    poi_type = (
+                        tags.get("tourism") or tags.get("amenity") or
+                        tags.get("leisure") or tags.get("historic") or
+                        tags.get("natural") or "place"
+                    )
                     pois.append({
                         "id":       str(el.get("id", "")),
                         "name":     name,
@@ -114,83 +253,13 @@ async def _fetch_pois(lat: float, lon: float, radius_m: int) -> list[dict]:
                         "poi_type": poi_type,
                         "tags":     tags,
                     })
+                logger.info("overpass_ok", extra={"mirror": mirror, "pois": len(pois)})
                 return pois
+
         except Exception as exc:
             logger.warning("overpass_failed", extra={"mirror": mirror, "error": str(exc)})
+
     return []
-
-
-# ---------------------------------------------------------------------------
-# LLM ranking
-# ---------------------------------------------------------------------------
-
-_SYSTEM = (
-    "You are TourAI's recommendation engine. Given a user's travel profile, current mood, "
-    "local conditions, and a list of nearby places, select and rank the best places for this person "
-    "right now. For each selected place write one vivid, specific sentence explaining exactly why it's "
-    "a great match — reference their interests, mood, or current conditions where relevant. "
-    "Be specific and personal, not generic. Never say 'this place is great' — say WHY it's great for THIS person NOW."
-)
-
-
-def _build_prompt(profile: dict, mood: str, conditions: dict, pois: list[dict], limit: int) -> str:
-    interests    = profile.get("interests", [])
-    travel_style = profile.get("travel_style", "")
-    pace         = profile.get("pace", "")
-
-    light_str = ""
-    if conditions["light_window"]:
-        if conditions["light_active"]:
-            light_str = f"{conditions['light_window']} is active right now."
-        elif conditions["light_mins_away"] and conditions["light_mins_away"] <= 90:
-            light_str = f"{conditions['light_window']} in {conditions['light_mins_away']} minutes."
-
-    poi_lines = "\n".join(
-        f"- id={p['id']} | {p['name']} ({p['poi_type']}) | {p['distance_km']:.2f}km away"
-        + (f" | tags: {', '.join(f'{k}={v}' for k, v in list(p['tags'].items())[:4])}" if p['tags'] else "")
-        for p in pois
-    )
-
-    return f"""User profile:
-- Interests: {', '.join(interests) or 'not specified'}
-- Travel style: {travel_style or 'not specified'}
-- Pace: {pace or 'not specified'}
-- Current mood: {mood}
-
-Current conditions:
-- Weather: {conditions['weather']}, {conditions['temperature_c']}°C
-- {light_str or 'No special light window right now.'}
-
-Nearby places:
-{poi_lines}
-
-Return a JSON array of the top {limit} places for this person right now, ordered best-first.
-Each item: {{"id": "<id>", "reason": "<one vivid sentence>"}}
-Return only valid JSON, no markdown, no explanation."""
-
-
-async def _rank_with_llm(profile: dict, mood: str, conditions: dict, pois: list[dict], limit: int) -> list[dict]:
-    from groq import AsyncGroq
-    client = AsyncGroq(api_key=settings.groq_api_key)
-    prompt = _build_prompt(profile, mood, conditions, pois, limit)
-
-    completion = await client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[
-            {"role": "system", "content": _SYSTEM},
-            {"role": "user",   "content": prompt},
-        ],
-        max_tokens=1500,
-        temperature=0.5,
-    )
-
-    raw = completion.choices[0].message.content.strip()
-    # Strip markdown code fences if model wraps in ```json
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-    return json.loads(raw.strip())
 
 
 # ---------------------------------------------------------------------------
@@ -206,15 +275,24 @@ async def get_recommendations(
     sb = get_supabase()
 
     async def _profile():
-        result = sb.table("profiles").select("interests,travel_style,pace").eq("user_id", str(user.id)).execute()
+        result = (
+            sb.table("profiles")
+            .select("interests,travel_style,pace")
+            .eq("user_id", str(user.id))
+            .execute()
+        )
         return result.data[0] if result.data else {}
 
-    profile_data, weather, pois = await asyncio.gather(
+    profile_data, weather, raw_pois = await asyncio.gather(
         _profile(),
         get_conditions(body.lat, body.lon),
         _fetch_pois(body.lat, body.lon, int(body.radius_km * 1000)),
     )
 
+    if not raw_pois:
+        raise HTTPException(status_code=503, detail="Could not fetch nearby places")
+
+    user_interests: list[str] = profile_data.get("interests") or []
     light = get_light_windows(weather["sunrise_iso"], weather["sunset_iso"])
 
     conditions_summary = {
@@ -226,51 +304,50 @@ async def get_recommendations(
         "light_mins_away": light["minutes_away"],
     }
 
-    if not pois:
-        raise HTTPException(status_code=503, detail="Could not fetch nearby places")
-
-    # Attach distance, filter to radius, take 30 closest for LLM context
-    candidates = []
-    for poi in pois:
+    # Attach distances, filter to radius, deduplicate by name
+    seen_names: set[str] = set()
+    candidates: list[dict] = []
+    for poi in raw_pois:
         dist_km = _haversine_km(body.lat, body.lon, poi["lat"], poi["lon"])
-        if dist_km <= body.radius_km:
-            candidates.append({**poi, "distance_km": dist_km})
-
-    candidates.sort(key=lambda p: p["distance_km"])
-    candidates = candidates[:30]
+        if dist_km > body.radius_km:
+            continue
+        name_key = poi["name"].lower().strip()
+        if name_key in seen_names:
+            continue
+        seen_names.add(name_key)
+        candidates.append({**poi, "distance_km": dist_km})
 
     if not candidates:
         raise HTTPException(status_code=503, detail="No places found within radius")
 
-    # LLM ranks and reasons
-    try:
-        ranked = await _rank_with_llm(profile_data, body.mood, conditions_summary, candidates, body.limit)
-    except Exception as exc:
-        logger.error("llm_ranking_failed", extra={"error": str(exc)})
-        raise HTTPException(status_code=502, detail="Could not rank recommendations right now")
+    # Score and sort
+    scored: list[tuple[float, dict, str]] = []
+    for poi in candidates:
+        score, reasons = _score_poi(poi, user_interests, body.mood, light, weather)
+        reason = _build_reason(poi, reasons)
+        scored.append((score, poi, reason))
 
-    # Build final card list using LLM ordering + reasons
-    poi_by_id = {p["id"]: p for p in candidates}
-    cards = []
-    for item in ranked:
-        poi = poi_by_id.get(str(item.get("id", "")))
-        if not poi:
-            continue
-        cards.append(RecommendationCard(
+    scored.sort(key=lambda x: x[0], reverse=True)
+
+    cards = [
+        RecommendationCard(
             id          = poi["id"],
             name        = poi["name"],
             poi_type    = poi["poi_type"],
             lat         = poi["lat"],
             lon         = poi["lon"],
             distance_km = round(poi["distance_km"], 2),
-            reason      = item.get("reason", ""),
+            reason      = reason,
             conditions  = conditions_summary,
-        ))
+            score       = round(score, 2),
+        )
+        for score, poi, reason in scored[:body.limit]
+    ]
 
-    logger.info("recommendations", extra={
+    logger.info("recommendations_ok", extra={
         "user_id":    str(user.id),
         "mood":       body.mood,
-        "pois_found": len(pois),
+        "pois_found": len(raw_pois),
         "candidates": len(candidates),
         "cards":      len(cards),
     })
