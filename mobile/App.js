@@ -15,18 +15,23 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AppState,
   Platform,
+  Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
+import * as Speech from 'expo-speech';
 import { StatusBar } from 'expo-status-bar';
 import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
 
 import BottomBar from './components/BottomBar';
 import GlowMarker from './components/GlowMarker';
+import NowPlayingCard from './components/NowPlayingCard';
 import POIDetail from './components/POIDetail';
+import PoiListSheet from './components/PoiListSheet';
+import StoryHistorySheet from './components/StoryHistorySheet';
 
 // DEV ONLY — remove these imports for production
 import { useSimulateWalk, SimulateWalkPanel } from './dev/SimulateWalk';
@@ -151,6 +156,12 @@ export default function App() {
   const [selectedPoi, setSelectedPoi] = useState(null);
   const [permissionGranted, setPermissionGranted] = useState(false);
   const [error, setError] = useState(null);
+
+  // ── New UI state ─────────────────────────────────────────────────────────
+  const [nowPlaying, setNowPlaying]     = useState({ poi: null, story: null, active: false });
+  const [storyHistory, setStoryHistory] = useState([]);
+  const [showHistory, setShowHistory]   = useState(false);
+  const [showPoiList, setShowPoiList]   = useState(false);
 
   const headingRef       = useRef(0);
   const lastPollHeadingRef = useRef(0);    // heading at the time of last poll
@@ -363,8 +374,35 @@ export default function App() {
     if (storyCacheRef.current.has(key)) return storyCacheRef.current.get(key);
     const story = await fetchStory(poi);
     storyCacheRef.current.set(key, story);
+    setStoryHistory(prev =>
+      prev.some(e => String(e.poi.id) === key)
+        ? prev
+        : [{ poi, story, timestamp: Date.now() }, ...prev],
+    );
     return story;
   }, []);
+
+  // ── Speech handlers (lifted from POIDetail so audio persists past sheet close) ──
+
+  const handleRequestPlay = useCallback((poi, story) => {
+    Speech.stop();
+    Speech.speak(story, {
+      rate: 0.92,
+      onDone:  () => setNowPlaying(p => p.poi?.id === poi.id ? { poi: null, story: null, active: false } : p),
+      onError: () => setNowPlaying(p => p.poi?.id === poi.id ? { poi: null, story: null, active: false } : p),
+    });
+    setNowPlaying({ poi, story, active: true });
+  }, []);
+
+  const handleRequestStop = useCallback(() => {
+    Speech.stop();
+    setNowPlaying({ poi: null, story: null, active: false });
+  }, []);
+
+  const handleOpenHistory = useCallback(() => {
+    if (nowPlaying.active) handleRequestStop();
+    setShowHistory(true);
+  }, [nowPlaying.active, handleRequestStop]);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -452,12 +490,26 @@ export default function App() {
         </View>
       ) : null}
 
-      {/* Bottom bar — street name + story count + ask button */}
-      <BottomBar
-        streetName={streetName}
-        storyCount={visiblePois.length}
-        onAsk={handleAsk}
-      />
+      {/* POI list toggle — top-right floating button */}
+      <Pressable
+        style={styles.listToggleBtn}
+        onPress={() => setShowPoiList(true)}>
+        <Text style={styles.listToggleIcon}>≡</Text>
+      </Pressable>
+
+      {/* Bottom stack: NowPlayingCard + BottomBar */}
+      <View style={styles.bottomStack}>
+        {nowPlaying.active && (
+          <NowPlayingCard poi={nowPlaying.poi} onStop={handleRequestStop} />
+        )}
+        <BottomBar
+          streetName={streetName}
+          storyCount={visiblePois.length}
+          onAsk={handleAsk}
+          historyCount={storyHistory.length}
+          onHistory={handleOpenHistory}
+        />
+      </View>
 
       {/* POI detail modal */}
       <POIDetail
@@ -466,6 +518,24 @@ export default function App() {
         onClose={() => setSelectedPoi(null)}
         onFetchStory={handleFetchStory}
         onReport={handleReport}
+        isPlaying={nowPlaying.active && nowPlaying.poi?.id === selectedPoi?.id}
+        onRequestPlay={handleRequestPlay}
+        onRequestStop={handleRequestStop}
+      />
+
+      {/* Story history sheet */}
+      <StoryHistorySheet
+        visible={showHistory}
+        history={storyHistory}
+        onClose={() => setShowHistory(false)}
+      />
+
+      {/* POI list sheet */}
+      <PoiListSheet
+        visible={showPoiList}
+        pois={visiblePois}
+        onClose={() => setShowPoiList(false)}
+        onSelectPoi={setSelectedPoi}
       />
 
       {/* DEV ONLY — remove <SimulateWalkPanel> for production */}
@@ -495,6 +565,33 @@ const styles = StyleSheet.create({
   },
   map: {
     ...StyleSheet.absoluteFillObject,
+  },
+  bottomStack: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+  },
+  listToggleBtn: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 58 : 16,
+    right: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  listToggleIcon: {
+    fontSize: 20,
+    color: '#0F172A',
+    lineHeight: 22,
   },
   errorBanner: {
     position: 'absolute',

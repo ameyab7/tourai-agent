@@ -5,9 +5,12 @@
  * Hides internal OSM fields (osm_id, osm_type, ref:*, *:wikidata, etc.).
  *
  * Props:
- *   poi     — POI object from /v1/visible-pois or null
- *   visible — boolean
- *   onClose — () => void
+ *   poi            — POI object from /v1/visible-pois or null
+ *   visible        — boolean
+ *   onClose        — () => void
+ *   isPlaying      — boolean (controlled by App)
+ *   onRequestPlay  — (poi, storyText) => void
+ *   onRequestStop  — () => void
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -22,7 +25,6 @@ import {
   Text,
   View,
 } from 'react-native';
-import * as Speech from 'expo-speech';
 
 // ── Type display config ────────────────────────────────────────────────────────
 
@@ -186,10 +188,12 @@ function openDirections(lat, lon, name) {
 const STORY_STATES  = { IDLE: 0, LOADING: 1, LOADED: 2, ERROR: 3 };
 const REPORT_STATES = { IDLE: 0, SENDING: 1, DONE: 2, ERROR: 3 };
 
-export default function POIDetail({ poi, visible, onClose, onFetchStory, onReport }) {
+export default function POIDetail({
+  poi, visible, onClose, onFetchStory, onReport,
+  isPlaying, onRequestPlay, onRequestStop,
+}) {
   const [storyState, setStoryState]   = useState(STORY_STATES.IDLE);
   const [story, setStory]             = useState('');
-  const [speaking, setSpeaking]       = useState(false);
   const [reportState, setReportState] = useState(REPORT_STATES.IDLE);
   const fetchedForRef                 = useRef(null);
   const reportTimerRef                = useRef(null);
@@ -200,18 +204,15 @@ export default function POIDetail({ poi, visible, onClose, onFetchStory, onRepor
     if (fetchedForRef.current === String(poi.id)) return;
     fetchedForRef.current = String(poi.id);
     setStory('');
-    setSpeaking(false);
     setStoryState(STORY_STATES.LOADING);
     onFetchStory(poi)
       .then(text => { setStory(text); setStoryState(STORY_STATES.LOADED); })
       .catch(() => setStoryState(STORY_STATES.ERROR));
   }, [visible, poi?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Stop speech + reset report state when sheet closes
+  // Reset report state when sheet closes (speech is owned by App.js — don't stop it)
   useEffect(() => {
     if (!visible) {
-      Speech.stop();
-      setSpeaking(false);
       clearTimeout(reportTimerRef.current);
       setReportState(REPORT_STATES.IDLE);
     }
@@ -231,16 +232,10 @@ export default function POIDetail({ poi, visible, onClose, onFetchStory, onRepor
   };
 
   const toggleSpeech = () => {
-    if (speaking) {
-      Speech.stop();
-      setSpeaking(false);
+    if (isPlaying) {
+      onRequestStop?.();
     } else {
-      Speech.speak(story, {
-        rate: 0.92,
-        onDone:  () => setSpeaking(false),
-        onError: () => setSpeaking(false),
-      });
-      setSpeaking(true);
+      onRequestPlay?.(poi, story);
     }
   };
 
@@ -286,7 +281,7 @@ export default function POIDetail({ poi, visible, onClose, onFetchStory, onRepor
                 <Text style={styles.storyText}>{story}</Text>
                 <Pressable style={styles.speakBtn} onPress={toggleSpeech}>
                   <Text style={styles.speakBtnText}>
-                    {speaking ? '⏹ Stop' : '▶ Listen'}
+                    {isPlaying ? '⏹ Stop' : '▶ Listen'}
                   </Text>
                 </Pressable>
               </View>

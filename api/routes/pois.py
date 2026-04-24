@@ -204,7 +204,7 @@ async def get_visible_pois(body: VisiblePoisRequest) -> VisiblePoisResponse:
     # 4. Visibility filter with ray casting
     buildings = (area_data or {}).get("buildings") or None
 
-    visible, _ = filter_visible(
+    visible, rejected = filter_visible(
         pois,
         user_lat     = body.latitude,
         user_lon     = body.longitude,
@@ -216,6 +216,7 @@ async def get_visible_pois(body: VisiblePoisRequest) -> VisiblePoisResponse:
     # 5. Cache and return
     result_payload = {
         "visible_pois":  [_poi_to_out(p).model_dump() for p in visible],
+        "rejected_pois": [_poi_to_out(p).model_dump() for p in rejected],
         "street_name":   street,
         "total_checked": len(pois),
     }

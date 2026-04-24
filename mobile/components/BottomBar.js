@@ -7,9 +7,11 @@
  *   - Full-width "Ask" button that opens the question modal
  *
  * Props:
- *   streetName  — string or null
- *   storyCount  — number
- *   onAsk       — async (question: string) => string
+ *   streetName    — string or null
+ *   storyCount    — number
+ *   onAsk         — async (question: string) => string
+ *   historyCount  — number
+ *   onHistory     — () => void
  */
 
 import React, { useEffect, useState } from 'react';
@@ -36,7 +38,7 @@ const S = { IDLE: 0, INPUT: 1, LOADING: 2, ANSWER: 3, ERROR: 4 };
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export default function BottomBar({ streetName, storyCount, onAsk }) {
+export default function BottomBar({ streetName, storyCount, onAsk, historyCount, onHistory }) {
   const [modal, setModal] = useState(S.IDLE);
   const [question, setQuestion]   = useState('');
   const [answer, setAnswer]       = useState('');
@@ -164,17 +166,25 @@ export default function BottomBar({ streetName, storyCount, onAsk }) {
       <View style={styles.card}>
         <View style={styles.handle} />
 
-        {/* Top row: wordmark + story chip */}
+        {/* Top row: wordmark + story chip + history button */}
         <View style={styles.topRow}>
           <Text style={styles.wordmark}>TourAI</Text>
-          {storyCount > 0 && (
-            <View style={styles.storyChip}>
-              <View style={styles.storyDot} />
-              <Text style={styles.storyChipText}>
-                {storyCount} {storyCount === 1 ? 'story' : 'stories'} nearby
-              </Text>
-            </View>
-          )}
+          <View style={styles.topRowRight}>
+            {storyCount > 0 && (
+              <View style={styles.storyChip}>
+                <View style={styles.storyDot} />
+                <Text style={styles.storyChipText}>
+                  {storyCount} {storyCount === 1 ? 'story' : 'stories'} nearby
+                </Text>
+              </View>
+            )}
+            {historyCount > 0 && (
+              <Pressable style={styles.historyBtn} onPress={onHistory} hitSlop={8}>
+                <Text style={styles.historyIcon}>⏱</Text>
+                <Text style={styles.historyCount}>{historyCount}</Text>
+              </Pressable>
+            )}
+          </View>
         </View>
 
         {/* Street name */}
@@ -197,10 +207,6 @@ export default function BottomBar({ streetName, storyCount, onAsk }) {
 const styles = StyleSheet.create({
   // ── Bottom card ──────────────────────────────────────────────────────────────
   card: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
@@ -226,6 +232,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 4,
+  },
+  topRowRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  historyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    gap: 4,
+  },
+  historyIcon: {
+    fontSize: 12,
+  },
+  historyCount: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: DARK,
   },
   wordmark: {
     fontSize: 18,

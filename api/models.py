@@ -25,6 +25,7 @@ class PoiOut(BaseModel):
 
 class VisiblePoisResponse(BaseModel):
     visible_pois:   list[PoiOut]
+    rejected_pois:  list[PoiOut] = []
     street_name:    str | None
     total_checked:  int
     cache_hit:      bool
