@@ -165,8 +165,9 @@ class RecommendationsResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 _OVERPASS_MIRRORS = [
-    "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.openstreetmap.ru/api/interpreter",
 ]
 
 _QUERY = """\
@@ -183,7 +184,14 @@ async def _fetch_pois(lat: float, lon: float, radius_m: int) -> list[dict]:
     for mirror in _OVERPASS_MIRRORS:
         try:
             async with httpx.AsyncClient(timeout=20) as client:
-                r = await client.post(mirror, data={"data": query})
+                r = await client.post(
+                    mirror,
+                    data={"data": query},
+                    headers={"Accept": "application/json"},
+                )
+                if r.status_code in (406, 429, 500, 502, 503, 504):
+                    logger.warning("overpass_mirror_skipped", extra={"mirror": mirror, "status": r.status_code})
+                    continue
                 r.raise_for_status()
                 elements = r.json().get("elements", [])
                 pois = []
