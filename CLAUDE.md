@@ -217,7 +217,7 @@ The largest new surface in the PRD. A separate planning mode for multi-day trips
 | 1 | Navigation shell (Expo Router) | ✅ Complete |
 | 2 | Onboarding flow | ✅ Complete |
 | 3 | Supabase Auth + persistent profiles | ✅ Complete (see Known Issues #1–3) |
-| 4 | Home / Discover screen + mood check-in | ✅ Complete |
+| 4 | Home / Discover screen + mood check-in + GPS + Walk CTA | ✅ Complete |
 | 5 | Premium gate (RevenueCat) | ⬜ Not started |
 | 6 | Trip Itinerary Generator | ⬜ Not started |
 | 7 | Map enhancements (golden hour, photos) | ⬜ Not started |

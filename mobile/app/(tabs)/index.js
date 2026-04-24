@@ -1,4 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { router } from 'expo-router';
+import * as Location from 'expo-location';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator, Animated, Dimensions, FlatList,
@@ -124,6 +126,12 @@ function RecommendationCard({ card }) {
           </View>
         )}
       </View>
+      <Pressable
+        style={[rcard.walkBtn, { backgroundColor: color }]}
+        onPress={() => router.push('/(tabs)/live-walk')}
+      >
+        <Text style={rcard.walkBtnText}>Walk here now</Text>
+      </Pressable>
     </View>
   );
 }
@@ -140,8 +148,9 @@ export default function HomeScreen() {
   const [error,        setError]        = useState(null);
   const [conditions,   setConditions]   = useState(null);
   const [userName,     setUserName]     = useState('');
+  const [location,     setLocation]     = useState(null);
 
-  // Load saved mood and user name on mount
+  // Load saved mood, user name, and GPS on mount
   useEffect(() => {
     (async () => {
       const [savedMood, savedDate, { data: { user } }] = await Promise.all([
@@ -156,6 +165,13 @@ export default function HomeScreen() {
         setUserName(user.email.split('@')[0]);
       }
 
+      // Request GPS
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        setLocation({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+      }
+
       if (savedMood && savedDate === todayStr()) {
         setMood(savedMood);
       } else {
@@ -164,10 +180,10 @@ export default function HomeScreen() {
     })();
   }, []);
 
-  // Fetch recommendations whenever mood changes
+  // Fetch recommendations whenever mood or location changes
   useEffect(() => {
     if (mood) fetchRecommendations();
-  }, [mood]);
+  }, [mood, location]);
 
   const fetchRecommendations = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -178,20 +194,16 @@ export default function HomeScreen() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) { setError('Not signed in'); return; }
 
-      // Use a default location if GPS not available (can be replaced with expo-location)
+      const lat = location?.lat ?? 37.7749;
+      const lon = location?.lon ?? -122.4194;
+
       const res = await fetch(`${API_BASE}/v1/recommendations`, {
         method:  'POST',
         headers: {
           'Content-Type':  'application/json',
           'Authorization': `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({
-          lat:       37.7749,   // placeholder — will wire GPS in Phase 7
-          lon:       -122.4194,
-          mood,
-          radius_km: 5,
-          limit:     15,
-        }),
+        body: JSON.stringify({ lat, lon, mood, radius_km: 5, limit: 15 }),
       });
 
       if (!res.ok) {
@@ -406,7 +418,14 @@ const rcard = StyleSheet.create({
   name:   { fontSize: 15, fontWeight: '700', color: '#0F172A' },
   reason: { fontSize: 12, color: '#64748B', lineHeight: 18 },
   footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 },
-  dist:   { fontSize: 11, color: '#94A3B8', fontWeight: '500' },
-  badge:  { borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
-  badgeText: { fontSize: 10, fontWeight: '700' },
+  dist:       { fontSize: 11, color: '#94A3B8', fontWeight: '500' },
+  badge:      { borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  badgeText:  { fontSize: 10, fontWeight: '700' },
+  walkBtn: {
+    marginTop:     10,
+    borderRadius:  10,
+    paddingVertical: 10,
+    alignItems:    'center',
+  },
+  walkBtnText: { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
 });
