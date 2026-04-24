@@ -150,13 +150,14 @@ export default function HomeScreen() {
   const [userName,     setUserName]     = useState('');
   const [location,     setLocation]     = useState(null);
 
-  // Load saved mood, user name, and GPS on mount
+  // Load mood, user, and GPS in parallel on mount — then auto-fetch
   useEffect(() => {
     (async () => {
-      const [savedMood, savedDate, { data: { user } }] = await Promise.all([
+      const [savedMood, savedDate, { data: { user } }, locResult] = await Promise.all([
         AsyncStorage.getItem(MOOD_KEY),
         AsyncStorage.getItem(MOOD_DATE_KEY),
         supabase.auth.getUser(),
+        Location.requestForegroundPermissionsAsync(),
       ]);
 
       if (user?.user_metadata?.full_name) {
@@ -165,27 +166,30 @@ export default function HomeScreen() {
         setUserName(user.email.split('@')[0]);
       }
 
-      // Request GPS
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status === 'granted') {
+      let loc = null;
+      if (locResult.status === 'granted') {
         const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        setLocation({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+        loc = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+        setLocation(loc);
       }
 
       if (savedMood && savedDate === todayStr()) {
         setMood(savedMood);
+        // Mood already known — fetch immediately without waiting for mood state to propagate
+        fetchRecommendations(false, savedMood, loc);
       } else {
         setShowSheet(true);
       }
     })();
   }, []);
 
-  // Fetch recommendations whenever mood or location changes
+  // Fetch after mood is selected from the sheet
   useEffect(() => {
-    if (mood) fetchRecommendations();
-  }, [mood, location]);
+    if (mood && location !== undefined) fetchRecommendations(false, mood, location);
+  }, [mood]);
 
-  const fetchRecommendations = useCallback(async (isRefresh = false) => {
+  const fetchRecommendations = useCallback(async (isRefresh = false, currentMood = mood, currentLoc = location) => {
+    if (!currentMood) return;
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
     setError(null);
@@ -194,8 +198,8 @@ export default function HomeScreen() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) { setError('Not signed in'); return; }
 
-      const lat = location?.lat ?? 37.7749;
-      const lon = location?.lon ?? -122.4194;
+      const lat = currentLoc?.lat ?? 37.7749;
+      const lon = currentLoc?.lon ?? -122.4194;
 
       const res = await fetch(`${API_BASE}/v1/recommendations`, {
         method:  'POST',
@@ -203,7 +207,7 @@ export default function HomeScreen() {
           'Content-Type':  'application/json',
           'Authorization': `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({ lat, lon, mood, radius_km: 5, limit: 15 }),
+        body: JSON.stringify({ lat, lon, mood: currentMood, radius_km: 5, limit: 15 }),
       });
 
       if (!res.ok) {
@@ -228,6 +232,7 @@ export default function HomeScreen() {
     await AsyncStorage.setItem(MOOD_KEY, selectedMood);
     await AsyncStorage.setItem(MOOD_DATE_KEY, todayStr());
     setMood(selectedMood);
+    fetchRecommendations(false, selectedMood, location);
   };
 
   const currentMood = MOODS.find(m => m.id === mood);
