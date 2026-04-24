@@ -180,7 +180,7 @@ async def _rank_with_llm(profile: dict, mood: str, conditions: dict, pois: list[
             {"role": "system", "content": _SYSTEM},
             {"role": "user",   "content": prompt},
         ],
-        max_tokens=600,
+        max_tokens=1500,
         temperature=0.5,
     )
 
