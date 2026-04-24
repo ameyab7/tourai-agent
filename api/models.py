@@ -84,6 +84,34 @@ class HealthResponse(BaseModel):
 # Feedback models
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Profile / onboarding models
+# ---------------------------------------------------------------------------
+
+class ProfileSetupRequest(BaseModel):
+    device_id:           str              = Field(..., min_length=1)
+    interests:           list[str]        = Field(..., min_length=1)
+    travel_style:        str              = Field(..., pattern="^(solo|couple|family|group)$")
+    pace:                str              = Field(..., pattern="^(relaxed|balanced|packed)$")
+    drive_tolerance_hrs: float            = Field(..., ge=0, le=6)
+
+
+class ProfileSetupResponse(BaseModel):
+    status:    str   # "created" | "updated"
+    device_id: str
+    timestamp: str
+
+
+class ProfileGetResponse(BaseModel):
+    device_id:           str
+    interests:           list[str]
+    travel_style:        str
+    pace:                str
+    drive_tolerance_hrs: float
+    created_at:          str
+    updated_at:          str
+
+
 class FeedbackRequest(BaseModel):
     """Report a false positive or false negative from the visibility filter."""
     latitude:    float = Field(..., ge=-90,  le=90)

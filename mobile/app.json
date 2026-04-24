@@ -3,13 +3,14 @@
     "name": "TourAI",
     "slug": "tourai",
     "version": "1.0.0",
+    "scheme": "tourai",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "ios": {
       "bundleIdentifier": "com.tourai.app",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "TourAI needs your location to show nearby points of interest.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "TourAI needs your location to show nearby points of interest.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "TourAI needs your location to show nearby points of interest."
       }
     },
     "android": {
@@ -27,7 +28,8 @@
         }
       ],
       "expo-asset",
-      "expo-font"
+      "expo-font",
+      "expo-router"
     ]
   }
 }

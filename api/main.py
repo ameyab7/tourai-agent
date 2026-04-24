@@ -39,7 +39,7 @@ from api.cache import cache_sweep_loop
 from api.config import settings
 from api.logging_setup import setup_logging
 from api.middleware import observability_middleware
-from api.routes import ask, feedback, health, pois, route, story
+from api.routes import ask, feedback, health, pois, profile, route, story
 
 logger = setup_logging(settings.log_file)
 
@@ -86,6 +86,7 @@ app.include_router(story.router)
 app.include_router(health.router)
 app.include_router(feedback.router)
 app.include_router(route.router)
+app.include_router(profile.router)
 
 
 if __name__ == "__main__":
