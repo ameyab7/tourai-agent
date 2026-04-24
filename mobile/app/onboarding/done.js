@@ -3,6 +3,7 @@ import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { supabase } from '../../lib/supabase';
 
 const API_BASE = 'https://tourai-agent-production.up.railway.app';
 
@@ -37,10 +38,19 @@ export default function DoneScreen() {
     setLoading(true);
     setError(null);
     try {
-      const deviceId = await getOrCreateDeviceId();
-      await fetch(`${API_BASE}/v1/profile/setup`, {
+      const [deviceId, { data: { session } }] = await Promise.all([
+        getOrCreateDeviceId(),
+        supabase.auth.getSession(),
+      ]);
+
+      const res = await fetch(`${API_BASE}/v1/profile/setup`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token
+            ? { 'Authorization': `Bearer ${session.access_token}` }
+            : {}),
+        },
         body: JSON.stringify({
           device_id:           deviceId,
           interests:           profile.interests,
@@ -49,6 +59,9 @@ export default function DoneScreen() {
           drive_tolerance_hrs: profile.driveHrs,
         }),
       });
+
+      if (!res.ok) throw new Error(`Server error ${res.status}`);
+
       await AsyncStorage.setItem('onboarding_complete', 'true');
       router.replace('/(tabs)');
     } catch (err) {

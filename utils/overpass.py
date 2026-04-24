@@ -27,7 +27,6 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _ALL_MIRRORS = [
-    "http://localhost:12345/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
     "https://overpass-api.de/api/interpreter",
     "https://overpass.openstreetmap.ru/api/interpreter",

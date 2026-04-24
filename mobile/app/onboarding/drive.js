@@ -4,110 +4,107 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import OnboardingShell from '../../components/OnboardingShell';
 
-const STEPS = [
-  { hrs: 0,   label: 'Stay local',  sub: 'Within your city' },
-  { hrs: 1,   label: 'Up to 1 hr',  sub: 'Quick day trips' },
-  { hrs: 2,   label: 'Up to 2 hrs', sub: 'Weekend range' },
-  { hrs: 3,   label: 'Up to 3 hrs', sub: 'Regional explorer' },
-  { hrs: 4,   label: 'Up to 4 hrs', sub: 'Long day trip' },
-  { hrs: 5,   label: 'Up to 5 hrs', sub: 'Road tripper' },
-  { hrs: 6,   label: '6 hrs+',      sub: 'Anywhere the road goes' },
+const OPTIONS = [
+  { hrs: 0, label: 'Stick close to home',  emoji: '🏠', sub: 'Local spots only' },
+  { hrs: 2, label: 'Up to 2 hours',        emoji: '🚗', sub: 'Easy day trips' },
+  { hrs: 4, label: 'Half-day road trip',   emoji: '🛣️', sub: 'Worth the drive' },
+  { hrs: 6, label: "I'll drive anywhere",  emoji: '🗺️', sub: 'No limit' },
 ];
 
 export default function DriveScreen() {
-  const [selected, setSelected] = useState(2);
+  const [selected, setSelected] = useState(null);
 
   const handleContinue = async () => {
-    await AsyncStorage.setItem('ob_drive_hrs', String(STEPS[selected].hrs));
+    await AsyncStorage.setItem('ob_drive_hrs', String(OPTIONS[selected].hrs));
     router.push('/onboarding/done');
   };
 
   return (
     <OnboardingShell
       step={4}
-      title="How far will you drive?"
-      subtitle="Sets the radius for trip recommendations."
-      canContinue={true}
+      title="How far would you drive for a great weekend?"
+      canContinue={selected !== null}
       onContinue={handleContinue}
       continueLabel="Build my profile →">
 
-      {/* Visual value display */}
-      <View style={styles.valueBox}>
-        <Text style={styles.valueLabel}>{STEPS[selected].label}</Text>
-        <Text style={styles.valueSub}>{STEPS[selected].sub}</Text>
-      </View>
-
-      {/* Segmented selector */}
-      <View style={styles.segments}>
-        {STEPS.map((step, i) => (
-          <Pressable
-            key={i}
-            style={[styles.seg, i === selected && styles.segActive]}
-            onPress={() => setSelected(i)}>
-            <Text style={[styles.segText, i === selected && styles.segTextActive]}>
-              {step.hrs === 0 ? '0' : step.hrs === 6 ? '6+' : step.hrs}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-      <View style={styles.segLabels}>
-        <Text style={styles.segHint}>hours</Text>
+      <View style={styles.list}>
+        {OPTIONS.map((opt, i) => {
+          const active = selected === i;
+          return (
+            <Pressable
+              key={i}
+              style={[styles.card, active && styles.cardActive]}
+              onPress={() => setSelected(i)}>
+              <Text style={styles.emoji}>{opt.emoji}</Text>
+              <View style={styles.textBlock}>
+                <Text style={[styles.label, active && styles.labelActive]}>{opt.label}</Text>
+                <Text style={styles.sub}>{opt.sub}</Text>
+              </View>
+              <View style={[styles.radio, active && styles.radioActive]}>
+                {active && <View style={styles.radioDot} />}
+              </View>
+            </Pressable>
+          );
+        })}
       </View>
     </OnboardingShell>
   );
 }
 
 const styles = StyleSheet.create({
-  valueBox: {
-    alignItems: 'center',
-    paddingVertical: 32,
+  list: {
+    gap: 12,
   },
-  valueLabel: {
-    fontSize: 36,
-    fontWeight: '800',
-    color: '#0F172A',
-    letterSpacing: -1,
-  },
-  valueSub: {
-    fontSize: 15,
-    color: '#64748B',
-    marginTop: 6,
-  },
-  segments: {
+  card: {
     flexDirection: 'row',
-    backgroundColor: '#F1F5F9',
-    borderRadius: 14,
-    padding: 4,
-    gap: 2,
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#E2E8F0',
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+    gap: 14,
   },
-  seg: {
+  cardActive: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#2563EB',
+  },
+  emoji: {
+    fontSize: 26,
+  },
+  textBlock: {
     flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-    borderRadius: 10,
   },
-  segActive: {
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  segText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#94A3B8',
-  },
-  segTextActive: {
+  label: {
+    fontSize: 15,
+    fontWeight: '700',
     color: '#0F172A',
+    marginBottom: 2,
   },
-  segLabels: {
+  labelActive: {
+    color: '#2563EB',
+  },
+  sub: {
+    fontSize: 13,
+    color: '#64748B',
+  },
+  radio: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: '#CBD5E1',
     alignItems: 'center',
-    marginTop: 8,
+    justifyContent: 'center',
   },
-  segHint: {
-    fontSize: 12,
-    color: '#CBD5E1',
+  radioActive: {
+    borderColor: '#2563EB',
+  },
+  radioDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#2563EB',
   },
 });

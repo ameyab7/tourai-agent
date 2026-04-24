@@ -1,122 +1,226 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Setup
+---
 
-```bash
-pip install langgraph langchain-google-genai httpx edge-tts python-dotenv
-```
+## Product Roadmap — PRD Integration Plan
 
-Requires a `.env` file with `GEMINI_API_KEY`. The venv is at `./venv/`.
+The current codebase is the **Live Walk** premium feature inside a larger TourAI app. The PRD describes the full app. Everything built so far maps to one locked screen in the final product.
 
-## Running
-
-**Scripted demo** (hardcoded Dallas stops):
-```bash
-python main.py
-```
-
-**Interactive testing** (manual coords, Maps URLs, walk simulation):
-```bash
-python interactive.py
-```
-
-Inside interactive mode, commands:
-- `32.7787, -96.8083` — manual lat/lon (optional `, speed, heading`)
-- `<Google Maps URL>` — paste to extract coords
-- `walk {lat},{lon} to {lat},{lon} in {N} steps` — simulate a walk along OSRM route
-- `fast` — toggle test mode (disables 4-minute timing gate)
-- `reset` — clear session history, POI cache, and context window
-- `profile` / `history` — inspect current user profile and session stories
-
-**Run a specific test file:**
-```bash
-python tests/test_tools.py
-python tests/test_rank_pois.py
-python tests/test_utils.py
-python tests/test_agent.py
-python tests/test_graph.py
-python tests/test_edge_cases.py
-```
-
-(Tests use `sys.path.insert` to find the project root — run from repo root.)
-
-## Architecture
-
-Multi-agent **LangGraph** system with an Orchestrator subgraph feeding into a Storyteller subgraph. Both agents use `gemma-4-31b-it` via `ChatGoogleGenerativeAI`.
-
-### Package layout
+### Target app structure
 
 ```
-tourai/                      # main Python package
-  __init__.py
-  state.py                   # AgentState + StorytellerState TypedDicts
-  tools.py                   # all 9 LangChain tools + ORCHESTRATOR_TOOLS / STORYTELLER_TOOLS lists
-  prefetcher.py              # background POI pre-fetch (daemon thread, own asyncio loop)
-  profile_manager.py         # JSON-backed user interest weights with engagement decay
-  agents/
-    orchestrator.py          # ORCHESTRATOR_PROMPT + bound model (steps 1–4)
-    storyteller.py           # STORYTELLER_PROMPT + bound model (steps 5–7)
-  graphs/
-    orchestrator_graph.py    # orchestrator StateGraph — routes to storyteller on SPEAK decision
-    storyteller_graph.py     # storyteller StateGraph — self-critique loop (max 2 revisions)
-  utils/
-    overpass.py              # async Overpass API client (OSM POI search)
-    wikipedia.py             # async Wikipedia summary fetcher
-    weather.py               # async Open-Meteo client (WMO weathercode table)
-    tts.py                   # async TTS via edge-tts
-    osrm.py                  # OSRM nearest-road snap and walking route polyline
-
-graph.py                     # thin shim — re-exports build_orchestrator_graph as build_graph()
-main.py                      # scripted demo runner (hardcoded Dallas stops)
-interactive.py               # interactive REPL with walk simulation and OSRM street snapping
-profiles/                    # JSON user profile files (auto-created)
-output/                      # MP3 audio files (auto-created)
-tests/                       # test scripts (not a pytest suite — run directly)
+TourAI App
+├── Free Tier
+│   ├── Onboarding          — swipe-based interest + travel style capture
+│   ├── Home / Discover     — mood check-in + condition-aware recommendations
+│   ├── Trip Planner        — itinerary generator, drive splitting, multi-day
+│   └── Profile / Settings  — taste profile, preferences, subscription status
+└── Premium (Live Walk)     — everything currently built (GPS tour guide)
 ```
 
-### Execution flow
+---
 
-```
-GPS message
-  → Orchestrator (steps 1–4: perceive, gate, search, spatial filter)
-      calls make_orchestrator_decision(action="speak", poi=...) or action="wait"
-  → decision_node extracts decision, sets orchestrator_decision in state
-  → if "speak": storyteller_invoke_node compiles + runs storyteller subgraph
-      → Storyteller (steps 5–7: enrich, write + self-critique, deliver audio)
-          self-critique loop: up to 2 revision cycles
-          calls synthesize_audio + log_story as parallel tool calls
-  → final_output_node writes {action, story_text, audio_path} or {action, reasoning}
-```
+### Phase 1 — Navigation Foundation
+**Status: ✅ COMPLETE**
+**Effort: ~3 days**
 
-### Key design decisions
+The app is a single screen today. Nothing else can be built until navigation exists.
 
-- **Prompt chaining**: Orchestrator and Storyteller have separate focused prompts. Orchestrator passes a structured POI brief (name, id, tags, coordinates) to Storyteller via `StorytellerState`.
-- **`make_orchestrator_decision` (Tool 9)**: Orchestrator's only output channel — forces a structured decision and lets the graph route to storyteller or output directly.
-- **Prefetcher**: `tourai/prefetcher.py` fires `search_nearby` in a daemon thread with its own event loop (isolated from main `_executor`) when the user starts walking. Results are cached and injected as pre-loaded context on the next GPS update.
-- **Pre-loaded context injection**: `interactive.py` injects USER PROFILE, SESSION HISTORY, WEATHER, and (if available) PRE-FETCHED POIS into the GPS HumanMessage to avoid redundant tool calls. Orchestrator falls back to live `search_pois` if pre-fetch is missing.
-- **Async bridging**: All `utils/*.py` are async. `tools.py` bridges them via `_run()` (ThreadPoolExecutor). Prefetcher uses `asyncio.run()` in its own thread — never touches `_executor`.
+- [x] Add `expo-router` to `mobile/`
+- [x] Create tab layout: Home, Live Walk, Plan, Profile
+- [x] Move current `App.js` map screen → `mobile/app/(tabs)/live-walk.js`
+- [x] Add placeholder screens for each tab so the shell compiles
+- [x] Add a top-level `_layout.js` with GestureHandlerRootView + SafeAreaProvider
+- [x] Verify Live Walk still works identically after the move
 
-### Tools and caching
+---
 
-- `search_pois` — caches by `(grid_cell_55m, radius, frozenset(tags))` for 5 minutes
-- `get_weather` — caches for 30 minutes
-- `_session_stories` — module-level list in `tools.py`, lives for process lifetime
-- Audio output goes to `./output/` as timestamped MP3s
+### Phase 2 — Onboarding Flow
+**Status: ✅ COMPLETE**
+**Effort: ~1 week**
 
-### `rank_pois` scoring
+Shown once on first launch. Captures explicit interests, travel style, pace, and drive tolerance, then POSTs to the backend profile API.
 
-```
-significance = (tag_richness × 0.3) + (interest_match × 0.5) + (wiki_notability × 0.2)
-```
+**Mobile (`mobile/app/onboarding/`):**
+- [x] Interest selection screen — 10 category cards in 2-col grid, multi-select (`onboarding/index.js`)
+- [x] Travel style screen — Solo / Couple / Family / Group (`onboarding/style.js`)
+- [x] Pace preference screen — Relaxed / Balanced / Packed (`onboarding/pace.js`)
+- [x] Drive tolerance screen — 4 anchored options: "Stick close to home" / "Up to 2 hours" / "Half-day road trip" / "I'll drive anywhere" (`onboarding/drive.js`)
+- [x] Completion screen — profile summary card + "Start Exploring" CTA (`onboarding/done.js`)
 
-POIs below 0.15 are filtered. Ranking: tier (IMMEDIATE < 50m, NEAR < 200m, FAR) takes priority over significance score. Within a tier, higher significance wins.
+**Backend (`api/routes/profile.py`):**
+- [x] `POST /v1/profile/setup` — accepts onboarding payload, upserts to `_profiles` dict + `profiles.json`
+- [x] `GET /v1/profile/{device_id}` — returns profile or 404
+- N/A: "Extend `profile_manager.py`" — that file belonged to the old LangGraph architecture; the FastAPI profile route serves the same purpose directly
 
-### Context window management
+---
 
-Both `main.py` and `interactive.py` compress history when it exceeds 30 messages: oldest messages are replaced with a summary preserving POI names told so far. The system message is stripped from carried messages and prepended fresh each invocation.
+### Phase 3 — Supabase Auth + Persistent Profiles
+**Status: NOT STARTED**
+**Effort: ~1 week**
 
-### OSRM integration
+Required before freemium gating. Without auth there is no concept of a user account or subscription.
 
-`interactive.py` snaps each GPS point to the nearest road via `tourai/utils/osrm.py` before invoking the agent. This provides `dest_lat/dest_lon` (road endpoint ahead), which `rank_pois` uses to compute `route_offset_m` — how far each POI sits off the traveler's path.
+**Backend:**
+- [ ] Add Supabase Python client to `requirements.txt`
+- [ ] Create Supabase project, configure `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` env vars
+- [ ] Define `profiles` table: `user_id, interests, travel_style, pace, drive_tolerance_hrs, created_at, updated_at`
+- [ ] Migrate `profile_manager.py` — replace JSON file reads/writes with Supabase queries
+- [ ] Add auth middleware to FastAPI — validate Supabase JWT on protected routes
+
+**Mobile:**
+- [ ] Add `@supabase/supabase-js` + `expo-secure-store` (token storage)
+- [ ] Auth screens: Sign Up, Log In, Forgot Password (email + Google + Apple)
+- [ ] Persist session token securely; attach as `Authorization: Bearer` header on all API calls
+- [ ] Show auth gate before Onboarding on first launch; skip if already signed in
+- [ ] Email confirmation deep link — add `tourai://auth/callback` to Supabase redirect URLs + handle in-app (currently disabled for dev; required before App Store submission)
+
+---
+
+### Phase 4 — Home / Discover Screen
+**Status: ✅ COMPLETE**
+**Effort: ~2 weeks**
+
+The main free-tier entry point. Replaces the current "drop straight into map" UX.
+
+**Mood check-in:**
+- [ ] Bottom sheet shown at start of every session (or when mood hasn't been set today)
+- [ ] 5 moods: Adventurous / Relaxed / Spontaneous / Social / Focused (photography)
+- [ ] Mood stored in session state; passed as context to recommendation engine
+
+**Recommendation cards:**
+- [ ] Horizontal scroll of personalized POI cards — not a map, not a list of everything nearby
+- [ ] Each card: photo (Google Places), name, why-it-matches-you blurb, distance/drive time, conditions badge (golden hour in 2h, clear skies, low crowds)
+- [ ] "Plan a trip here" CTA → Trip Planner; "Walk here now" CTA → Live Walk (premium gate)
+
+**Backend (`api/routes/recommendations.py`):**
+- [ ] `POST /v1/recommendations` — accepts `{ lat, lon, mood, radius_km, limit }`
+- [ ] Pulls nearby POIs, scores by interest match + mood + current conditions (weather, time of day)
+- [ ] Returns ranked cards with a `reason` field ("matches your interest in car photography + golden hour in 90 min")
+
+**Condition signals to wire in:**
+- [ ] Time of day → golden hour / blue hour window (calculate from lat/lon + sunset time)
+- [ ] Weather → current conditions from existing `utils/weather.py`
+- [ ] Crowd proxy → time-of-week heuristic (weekend morning vs. Saturday afternoon)
+
+---
+
+### Phase 5 — Premium Gate on Live Walk
+**Status: NOT STARTED**
+**Effort: ~3 days (after Phase 3)**
+
+- [ ] Add RevenueCat SDK to mobile for subscription management (iOS + Android in-app purchase)
+- [ ] Define products: Monthly $7.99 / Annual $59.99
+- [ ] Paywall screen: feature comparison, "Start Free Trial" CTA
+- [ ] Gate the Live Walk tab — non-premium users see paywall instead of map
+- [ ] Free tier gets 1 preview walk (15 minutes, then soft paywall prompt)
+- [ ] Backend: add `is_premium` check on `/v1/story` endpoint (premium-only narrative depth)
+
+---
+
+### Phase 6 — Trip Itinerary Generator
+**Status: NOT STARTED**
+**Effort: ~3 weeks**
+
+The largest new surface in the PRD. A separate planning mode for multi-day trips.
+
+**Mobile (`mobile/app/(tabs)/plan.tsx`):**
+- [ ] Destination input (autocomplete via Google Places)
+- [ ] Date range picker (departure + return)
+- [ ] Review inferred constraints (drive tolerance, travel style from profile)
+- [ ] Generated itinerary view: day-by-day cards with stops, drive legs, timing notes
+- [ ] Each stop: photo, why-recommended, hours, booking link, sell-out warning if applicable
+- [ ] Save / export itinerary
+
+**Backend (`api/routes/itinerary.py`):**
+- [ ] `POST /v1/itinerary` — accepts `{ destination, start_date, end_date, user_id }`
+- [ ] Pull user profile for interests, pace, drive tolerance
+- [ ] Fetch POIs along route corridor (Overpass or Google Places)
+- [ ] LLM call (Gemini) to generate narrative itinerary with timing, drive splits, insider tips
+- [ ] Drive splitting: break legs that exceed user's tolerance with overnight stop suggestions
+- [ ] Return structured JSON: `{ days: [{ date, stops: [{ poi, drive_from_prev_m, arrival_time, tip }] }] }`
+
+**Google Places integration:**
+- [ ] Add `GOOGLE_PLACES_API_KEY` env var
+- [ ] `utils/google_places.py` — search nearby, get details (photos, hours, rating, price level)
+- [ ] Use as enrichment layer on top of Overpass OSM data (OSM for geometry, Places for photos/hours)
+
+---
+
+### Phase 7 — Map Enhancements
+**Status: NOT STARTED**
+**Effort: ~1 week**
+
+- [ ] Golden hour overlay on Live Walk map — colour-shift the map tint when within 30 min of golden hour (photography mood only)
+- [ ] Itinerary route overlay — show the planned drive route as a polyline when navigating an itinerary stop
+- [ ] POI card photos — swap the current text-only POIDetail sheet for one with a Google Places photo header
+- [ ] Crowd / best-time badge on POI cards ("Best before 9 AM on weekends")
+
+---
+
+### Phase 8 — Astronomy / Moon Phase Signal
+**Status: NOT STARTED**
+**Effort: ~3 days**
+
+- [ ] Integrate Astronomy API (or Open-Meteo's astronomy endpoint) for moon phase + Milky Way visibility window
+- [ ] Add `utils/astronomy.py` — returns `{ moon_phase, moon_illumination, milky_way_visible, best_viewing_window }`
+- [ ] Wire into recommendation engine: boost stargazing / astrophotography POIs when conditions are good
+- [ ] Surface on Home screen cards: "New moon this Friday — ideal for Milky Way at Enchanted Rock"
+
+---
+
+### Phase 9 — Web Platform
+**Status: NOT STARTED**
+**Effort: ~3 weeks**
+
+- [ ] Bootstrap `web/` with Next.js 14 (App Router)
+- [ ] Shared Supabase auth (same JWT, same backend)
+- [ ] Trip Planner page — full itinerary builder optimised for desktop
+- [ ] SEO destination pages — static-generated pages for top destinations (Dallas, Austin, Big Bend, etc.)
+- [ ] Embed interactive map using `react-map-gl` + Mapbox
+- [ ] Responsive design: mobile web gets simplified view; desktop gets side-by-side map + itinerary
+
+---
+
+### Phase 10 — Freemium Polish + Analytics
+**Status: NOT STARTED**
+**Effort: ~1 week**
+
+- [ ] Enforce free tier limits: 3 saved itineraries/month, no Live Walk, standard POI cards only
+- [ ] Upgrade prompts at the right friction points (not random — only when hitting a limit)
+- [ ] Add PostHog (or Amplitude) for event tracking: session start, itinerary created, paywall seen, upgrade, walk started
+- [ ] D7/D30 retention dashboard
+- [ ] A/B test paywall copy and pricing
+
+---
+
+---
+
+### Known Issues / Pre-launch Fixes
+
+| # | Issue | Context | Fix before launch |
+|---|-------|---------|-------------------|
+| 1 | Email confirmation disabled in Supabase | Free tier shared SMTP is rate-limited to 2 emails/hour — confirmation emails don't reliably arrive during dev/testing. Disabled for now. | Re-enable "Confirm email" in Supabase → Authentication → Providers → Email, and configure a custom SMTP provider (e.g. Resend, SendGrid) before App Store submission |
+| 2 | Apple Sign In not implemented | No Apple Developer account ($99/year) at time of build | Required by App Store rules if any other social login is offered — implement before submission using `expo-apple-authentication` |
+| 3 | `tourai://auth/callback` email confirmation deep link untested | Could not test end-to-end due to issue #1 | Test after fixing SMTP — confirm email link opens app and signs user in |
+
+---
+
+### Current implementation status summary
+
+| Phase | Feature | Status |
+|-------|---------|--------|
+| — | Live Walk (GPS tour, POI visibility, storytelling, TTS) | ✅ Complete |
+| — | Visibility ground truth tooling (`eval_visibility.py`, `rejected_pois`) | ✅ Complete |
+| — | Now Playing card, Story History sheet, POI List sheet | ✅ Complete |
+| 1 | Navigation shell (Expo Router) | ✅ Complete |
+| 2 | Onboarding flow | ✅ Complete |
+| 3 | Supabase Auth + persistent profiles | ✅ Complete (see Known Issues #1–3) |
+| 4 | Home / Discover screen + mood check-in | ✅ Complete |
+| 5 | Premium gate (RevenueCat) | ⬜ Not started |
+| 6 | Trip Itinerary Generator | ⬜ Not started |
+| 7 | Map enhancements (golden hour, photos) | ⬜ Not started |
+| 8 | Astronomy / moon phase | ⬜ Not started |
+| 9 | Web platform (Next.js) | ⬜ Not started |
+| 10 | Freemium polish + analytics | ⬜ Not started |

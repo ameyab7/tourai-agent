@@ -21,6 +21,10 @@ pyproj
 # Environment variables
 python-dotenv
 
+# Supabase (auth + persistent profiles)
+supabase>=2.0.0
+psycopg2-binary
+
 # Testing
 pytest
 pytest-asyncio

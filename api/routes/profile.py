@@ -1,65 +1,48 @@
-"""api/routes/profile.py — POST /v1/profile/setup, GET /v1/profile/{device_id}"""
+"""api/routes/profile.py — POST /v1/profile/setup, GET /v1/profile/me"""
 
-import json
 import logging
-import os
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from api.auth import get_current_user
 from api.logging_setup import correlation_id
 from api.models import ProfileGetResponse, ProfileSetupRequest, ProfileSetupResponse
+from api.supabase_client import get_supabase
 
 router = APIRouter()
 logger = logging.getLogger("tourai.api")
-
-_profiles: dict[str, dict[str, Any]] = {}
-_PROFILES_FILE = Path(os.environ.get("PROFILES_PATH", "profiles.json"))
 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _load_from_disk() -> None:
-    if _PROFILES_FILE.exists():
-        try:
-            data = json.loads(_PROFILES_FILE.read_text())
-            _profiles.update(data)
-        except Exception:
-            pass
-
-
-def _save_to_disk() -> None:
-    try:
-        _PROFILES_FILE.write_text(json.dumps(_profiles, indent=2))
-    except Exception:
-        pass
-
-
-_load_from_disk()
-
-
 @router.post("/v1/profile/setup", response_model=ProfileSetupResponse)
-async def setup_profile(body: ProfileSetupRequest) -> ProfileSetupResponse:
-    cid    = correlation_id.get("-")
-    now    = _now_iso()
-    exists = body.device_id in _profiles
+async def setup_profile(
+    body: ProfileSetupRequest,
+    user=Depends(get_current_user),
+) -> ProfileSetupResponse:
+    sb  = get_supabase()
+    now = _now_iso()
 
-    _profiles[body.device_id] = {
+    existing = sb.table("profiles").select("id").eq("user_id", str(user.id)).execute()
+    exists   = len(existing.data) > 0
+
+    payload = {
+        "user_id":             str(user.id),
         "device_id":           body.device_id,
         "interests":           body.interests,
         "travel_style":        body.travel_style,
         "pace":                body.pace,
         "drive_tolerance_hrs": body.drive_tolerance_hrs,
-        "created_at":          _profiles.get(body.device_id, {}).get("created_at", now),
         "updated_at":          now,
     }
-    _save_to_disk()
+
+    sb.table("profiles").upsert(payload, on_conflict="user_id").execute()
 
     logger.info("profile_setup", extra={
+        "user_id":      str(user.id),
         "device_id":    body.device_id,
         "interests":    body.interests,
         "travel_style": body.travel_style,
@@ -70,14 +53,26 @@ async def setup_profile(body: ProfileSetupRequest) -> ProfileSetupResponse:
 
     return ProfileSetupResponse(
         status    = "updated" if exists else "created",
+        user_id   = str(user.id),
         device_id = body.device_id,
         timestamp = now,
     )
 
 
-@router.get("/v1/profile/{device_id}", response_model=ProfileGetResponse)
-async def get_profile(device_id: str) -> ProfileGetResponse:
-    profile = _profiles.get(device_id)
-    if not profile:
+@router.get("/v1/profile/me", response_model=ProfileGetResponse)
+async def get_my_profile(user=Depends(get_current_user)) -> ProfileGetResponse:
+    sb     = get_supabase()
+    result = sb.table("profiles").select("*").eq("user_id", str(user.id)).execute()
+    if not result.data:
         raise HTTPException(status_code=404, detail="Profile not found")
-    return ProfileGetResponse(**profile)
+    row = result.data[0]
+    return ProfileGetResponse(
+        user_id             = row["user_id"],
+        device_id           = row.get("device_id"),
+        interests           = row["interests"],
+        travel_style        = row["travel_style"],
+        pace                = row["pace"],
+        drive_tolerance_hrs = row["drive_tolerance_hrs"],
+        created_at          = str(row["created_at"]),
+        updated_at          = str(row["updated_at"]),
+    )

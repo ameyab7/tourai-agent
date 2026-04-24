@@ -9,6 +9,10 @@ class Settings(BaseSettings):
     gemini_api_key:   str = Field("", alias="GEMINI_API_KEY")
     geoapify_api_key: str = Field("", alias="GEOAPIFY_API_KEY")
 
+    supabase_url:         str = Field("", alias="SUPABASE_URL")
+    supabase_service_key: str = Field("", alias="SUPABASE_SERVICE_KEY")
+    database_url:         str = Field("", alias="DATABASE_URL")
+
     @field_validator("geoapify_api_key", mode="before")
     @classmethod
     def _clean_geoapify_key(cls, v: str) -> str:

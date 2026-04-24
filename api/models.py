@@ -89,21 +89,23 @@ class HealthResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 class ProfileSetupRequest(BaseModel):
-    device_id:           str              = Field(..., min_length=1)
-    interests:           list[str]        = Field(..., min_length=1)
-    travel_style:        str              = Field(..., pattern="^(solo|couple|family|group)$")
-    pace:                str              = Field(..., pattern="^(relaxed|balanced|packed)$")
-    drive_tolerance_hrs: float            = Field(..., ge=0, le=6)
+    device_id:           str | None = None
+    interests:           list[str]  = Field(..., min_length=1)
+    travel_style:        str        = Field(..., pattern="^(solo|couple|family|group)$")
+    pace:                str        = Field(..., pattern="^(relaxed|balanced|packed)$")
+    drive_tolerance_hrs: float      = Field(..., ge=0, le=6)
 
 
 class ProfileSetupResponse(BaseModel):
     status:    str   # "created" | "updated"
-    device_id: str
+    user_id:   str
+    device_id: str | None
     timestamp: str
 
 
 class ProfileGetResponse(BaseModel):
-    device_id:           str
+    user_id:             str
+    device_id:           str | None
     interests:           list[str]
     travel_style:        str
     pace:                str

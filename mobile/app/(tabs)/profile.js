@@ -1,14 +1,27 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { router } from 'expo-router';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { supabase } from '../../lib/supabase';
 
 export default function ProfileScreen() {
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    router.replace('/auth');
+  };
+
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.center}>
         <Text style={styles.icon}>👤</Text>
         <Text style={styles.title}>Profile</Text>
         <Text style={styles.sub}>Interests, travel style,{'\n'}subscription settings</Text>
-        <Text style={styles.coming}>Coming in Phase 3</Text>
+        <Text style={styles.coming}>Coming in Phase 4</Text>
+      </View>
+
+      <View style={styles.footer}>
+        <Pressable style={styles.signOutBtn} onPress={handleSignOut}>
+          <Text style={styles.signOutText}>Sign Out</Text>
+        </Pressable>
       </View>
     </SafeAreaView>
   );
@@ -45,5 +58,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#CBD5E1',
     marginTop: 32,
+  },
+  footer: {
+    paddingHorizontal: 24,
+    paddingBottom: 20,
+  },
+  signOutBtn: {
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 14,
+    paddingVertical: 15,
+    alignItems: 'center',
+  },
+  signOutText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#DC2626',
   },
 });

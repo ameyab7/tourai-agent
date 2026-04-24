@@ -39,7 +39,7 @@ from api.cache import cache_sweep_loop
 from api.config import settings
 from api.logging_setup import setup_logging
 from api.middleware import observability_middleware
-from api.routes import ask, feedback, health, pois, profile, route, story
+from api.routes import ask, feedback, health, pois, profile, recommendations, route, story
 
 logger = setup_logging(settings.log_file)
 
@@ -59,6 +59,8 @@ except ImportError:
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
+    from api.migrations import run_migrations
+    run_migrations(settings.database_url)
     asyncio.create_task(cache_sweep_loop())
     yield
 
@@ -87,6 +89,7 @@ app.include_router(health.router)
 app.include_router(feedback.router)
 app.include_router(route.router)
 app.include_router(profile.router)
+app.include_router(recommendations.router)
 
 
 if __name__ == "__main__":
