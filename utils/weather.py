@@ -1,4 +1,4 @@
-"""utils/weather.py — Current weather + sunrise/sunset via Open-Meteo (no API key)."""
+"""utils/weather.py — Current weather + multi-day forecast via Open-Meteo (no API key)."""
 
 import httpx
 
@@ -48,3 +48,45 @@ async def get_conditions(lat: float, lon: float) -> dict:
         "sunrise_iso":   sunrise,
         "sunset_iso":    sunset,
     }
+
+
+async def get_forecast(lat: float, lon: float, dates: list[str]) -> list[dict]:
+    """Return daily weather for each requested date (up to 16 days ahead).
+
+    Each entry: date, temp_high_c, temp_low_c, description, is_clear,
+                is_rainy, sunrise_iso, sunset_iso.
+    Dates not found in the forecast window are silently omitted.
+    """
+    params = {
+        "latitude":      lat,
+        "longitude":     lon,
+        "daily":         "temperature_2m_max,temperature_2m_min,weather_code,sunrise,sunset",
+        "timezone":      "auto",
+        "forecast_days": 16,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=8) as client:
+            r = await client.get(_BASE, params=params)
+            r.raise_for_status()
+            data = r.json()
+    except Exception:
+        return []
+
+    daily    = data["daily"]
+    date_set = set(dates)
+    result   = []
+    for i, d in enumerate(daily["time"]):
+        if d not in date_set:
+            continue
+        code = daily["weather_code"][i]
+        result.append({
+            "date":        d,
+            "temp_high_c": round(daily["temperature_2m_max"][i], 1),
+            "temp_low_c":  round(daily["temperature_2m_min"][i], 1),
+            "description": _WMO_DESCRIPTION.get(code, "Unknown"),
+            "is_clear":    code in (0, 1, 2),
+            "is_rainy":    code in (51, 53, 55, 61, 63, 65, 80, 81, 82, 95, 96, 99),
+            "sunrise_iso": daily["sunrise"][i],
+            "sunset_iso":  daily["sunset"][i],
+        })
+    return result

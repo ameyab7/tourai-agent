@@ -31,14 +31,13 @@ const ALL_INTERESTS = [
   { id: 'sports',       label: 'Sports',        emoji: '⚽' },
 ];
 
-// Quick trip vibes — selecting one pre-fills interests and pace
 const TRIP_VIBES = [
-  { id: 'city',    label: 'City Break',     emoji: '🏙️', interests: ['culture', 'food', 'architecture', 'social'], pace: 'balanced' },
-  { id: 'nature',  label: 'Nature Escape',  emoji: '🌲', interests: ['nature', 'hiking', 'photography'],           pace: 'relaxed'  },
-  { id: 'history', label: 'History Tour',   emoji: '🏛️', interests: ['history', 'architecture', 'culture'],        pace: 'balanced' },
-  { id: 'food',    label: 'Food & Culture', emoji: '🍜', interests: ['food', 'culture', 'social'],                 pace: 'relaxed'  },
-  { id: 'beach',   label: 'Beach Getaway',  emoji: '🌊', interests: ['nature', 'photography', 'social'],           pace: 'relaxed'  },
-  { id: 'photo',   label: 'Photo Trip',     emoji: '📷', interests: ['photography', 'nature', 'architecture'],     pace: 'packed'   },
+  { id: 'city',    label: 'City Break',    emoji: '🏙️', interests: ['culture','food','architecture','social'], pace: 'balanced' },
+  { id: 'nature',  label: 'Nature Escape', emoji: '🌲', interests: ['nature','hiking','photography'],          pace: 'relaxed'  },
+  { id: 'history', label: 'History Tour',  emoji: '🏛️', interests: ['history','architecture','culture'],       pace: 'balanced' },
+  { id: 'food',    label: 'Food & Culture',emoji: '🍜', interests: ['food','culture','social'],                pace: 'relaxed'  },
+  { id: 'beach',   label: 'Beach Getaway', emoji: '🌊', interests: ['nature','photography','social'],          pace: 'relaxed'  },
+  { id: 'photo',   label: 'Photo Trip',    emoji: '📷', interests: ['photography','nature','architecture'],    pace: 'packed'   },
 ];
 
 const PACE_OPTIONS = [
@@ -54,71 +53,227 @@ const STYLE_OPTIONS = [
   { id: 'group',  label: 'Group',  emoji: '👥' },
 ];
 
-// Messages cycled during the loading wait
-const LOADING_MESSAGES = [
-  'Exploring the area for hidden gems…',
-  'Matching spots to your interests…',
-  "Checking what's worth your time…",
-  'Crafting Day 1…',
-  'Adding insider tips…',
-  'Putting the finishing touches…',
-];
+const TRANSIT_ICONS = { walk: '🚶', uber: '🚕', drive: '🚗', metro: '🚇', arrive: '📍' };
 
-// POI type → emoji for stop cards
 const TYPE_EMOJI = {
-  museum: '🏛️', art_gallery: '🎨', gallery: '🎨', attraction: '⭐',
-  park: '🌳', nature_reserve: '🌿', beach: '🌊', viewpoint: '🏔️',
-  restaurant: '🍽️', cafe: '☕', bar: '🍸', pub: '🍺',
-  historic: '🏰', monument: '🗿', memorial: '🕊️', castle: '🏯', ruins: '🧱',
-  culture: '🎭', cinema: '🎬', theatre: '🎭', theme_park: '🎡',
-  shopping: '🛍️', mall: '🛍️', sports_centre: '⚽', stadium: '🏟️',
+  museum: '🏛️', art_gallery: '🎨', attraction: '⭐', park: '🌳',
+  nature_reserve: '🌿', beach: '🌊', viewpoint: '🏔️', restaurant: '🍽️',
+  cafe: '☕', bar: '🍸', pub: '🍺', historic: '🏰', monument: '🗿',
+  castle: '🏯', culture: '🎭', accommodation: '🏨', shopping: '🛍️',
 };
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
 
-function formatDate(d) { return d.toISOString().split('T')[0]; }
-function displayDate(iso) {
-  return new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-}
-function addDays(iso, n) {
-  const d = new Date(iso + 'T12:00:00');
-  d.setDate(d.getDate() + n);
-  return formatDate(d);
-}
-function nightsBetween(a, b) {
-  return Math.max(0, Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 86400000));
-}
+const formatDate  = d  => d.toISOString().split('T')[0];
+const displayDate = iso => new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+const addDays     = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return formatDate(d); };
+const nightsBetween = (a, b) => Math.max(0, Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 86400000));
 
-// ── Animated loading messages ─────────────────────────────────────────────────
+// ── Animated agent log ────────────────────────────────────────────────────────
 
-function LoadingView() {
-  const [msgIdx, setMsgIdx] = useState(0);
+function AgentLogView({ steps, destination }) {
   const opacity = useRef(new Animated.Value(1)).current;
+  const lastStep = steps[steps.length - 1] || '';
 
   useEffect(() => {
-    const cycle = () => {
-      Animated.sequence([
-        Animated.timing(opacity, { toValue: 0, duration: 400, useNativeDriver: true }),
-        Animated.timing(opacity, { toValue: 1, duration: 400, useNativeDriver: true }),
-      ]).start();
-      setMsgIdx(i => (i + 1) % LOADING_MESSAGES.length);
-    };
-    const t = setInterval(cycle, 2200);
-    return () => clearInterval(t);
-  }, []);
+    Animated.sequence([
+      Animated.timing(opacity, { toValue: 0.3, duration: 200, useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 1,   duration: 300, useNativeDriver: true }),
+    ]).start();
+  }, [lastStep]);
 
   return (
-    <View style={st.loadingBox}>
-      <ActivityIndicator color={ACCENT} size="large" />
-      <Animated.Text style={[st.loadingMsg, { opacity }]}>
-        {LOADING_MESSAGES[msgIdx]}
-      </Animated.Text>
-      <Text style={st.loadingHint}>Usually takes about 10 seconds</Text>
+    <View style={st.agentScreen}>
+      <Text style={st.agentDest}>{destination}</Text>
+      <ActivityIndicator color={ACCENT} size="large" style={{ marginBottom: 28 }} />
+      <View style={st.agentLog}>
+        {steps.slice(-5).map((s, i) => (
+          <Animated.Text
+            key={i}
+            style={[st.agentStep, i === steps.slice(-5).length - 1 && { opacity, color: '#fff', fontWeight: '700' }]}
+          >
+            {s}
+          </Animated.Text>
+        ))}
+      </View>
+      <Text style={st.agentHint}>Your AI travel agent is working…</Text>
     </View>
   );
 }
 
-// ── Sub-components ────────────────────────────────────────────────────────────
+// ── Result sub-components ─────────────────────────────────────────────────────
+
+function SectionCard({ children, style: extraStyle }) {
+  return <View style={[st.sectionCard, extraStyle]}>{children}</View>;
+}
+
+function CardTitle({ children }) {
+  return <Text style={st.cardTitle}>{children}</Text>;
+}
+
+function WeatherBadge({ weather }) {
+  if (!weather) return null;
+  const icon = weather.is_clear ? '☀️' : weather.description?.toLowerCase().includes('rain') ? '🌧️' : '⛅';
+  return (
+    <View style={st.weatherBadge}>
+      <Text style={st.weatherText}>{icon} {weather.description}  ·  {weather.temp_high_c}° / {weather.temp_low_c}°C</Text>
+    </View>
+  );
+}
+
+function TransitPill({ transit }) {
+  if (!transit || transit.mode === 'arrive') return null;
+  const icon = TRANSIT_ICONS[transit.mode] || '➡️';
+  return (
+    <View style={st.transitPill}>
+      <Text style={st.transitText}>{icon}  {transit.notes || `${transit.duration_min} min`}</Text>
+    </View>
+  );
+}
+
+function StopCard({ stop, destination }) {
+  const emoji = TYPE_EMOJI[stop.poi_type] || (stop.is_meal ? '🍽️' : '📍');
+
+  function openDirections() {
+    const q = encodeURIComponent(`${stop.name}, ${destination}`);
+    Linking.openURL(`https://maps.google.com/?q=${q}`);
+  }
+
+  return (
+    <View style={st.stopWrap}>
+      <TransitPill transit={stop.transit_from_prev} />
+      <View style={st.stopCard}>
+        <View style={[st.stopIconCircle, stop.is_meal && st.stopIconMeal]}>
+          <Text style={st.stopIconEmoji}>{emoji}</Text>
+        </View>
+        <View style={st.stopBody}>
+          <View style={st.stopHeaderRow}>
+            <Text style={st.stopName}>{stop.name}</Text>
+            {stop.is_meal && <View style={st.mealBadge}><Text style={st.mealBadgeText}>MEAL</Text></View>}
+          </View>
+          {stop.arrival_time ? (
+            <Text style={st.stopMeta}>
+              {stop.arrival_time}
+              {stop.duration_min > 0 ? `  ·  ${stop.duration_min} min` : ''}
+            </Text>
+          ) : null}
+          {stop.tip ? <Text style={st.stopTip}>{stop.tip}</Text> : null}
+          {stop.poi_type !== 'accommodation' && (
+            <Pressable onPress={openDirections}>
+              <Text style={st.directionsLink}>📍 Directions</Text>
+            </Pressable>
+          )}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function DayCard({ day, destination }) {
+  const [open, setOpen] = useState(true);
+  const activityCount = day.stops.filter(s => !s.is_meal && s.poi_type !== 'accommodation').length;
+  const mealCount     = day.stops.filter(s => s.is_meal).length;
+
+  return (
+    <SectionCard>
+      <Pressable style={st.dayHeader} onPress={() => setOpen(o => !o)}>
+        <View style={{ flex: 1 }}>
+          <Text style={st.dayLabel}>{day.day_label}</Text>
+          <Text style={st.dayMeta}>{activityCount} activities · {mealCount} meals</Text>
+        </View>
+        <WeatherBadge weather={day.weather} />
+        <Text style={st.dayChevron}>{open ? '▲' : '▼'}</Text>
+      </Pressable>
+      {open && day.stops.map((stop, i) => (
+        <StopCard key={i} stop={stop} destination={destination} />
+      ))}
+    </SectionCard>
+  );
+}
+
+function GettingThereCard({ info, destination }) {
+  if (!info) return null;
+  return (
+    <SectionCard>
+      <CardTitle>✈️  Getting There</CardTitle>
+      {info.notes ? <Text style={st.cardBody}>{info.notes}</Text> : null}
+      <View style={st.linkRow}>
+        {info.flights_url && (
+          <Pressable style={st.linkBtn} onPress={() => Linking.openURL(info.flights_url)}>
+            <Text style={st.linkBtnText}>Search Flights →</Text>
+          </Pressable>
+        )}
+        <Pressable
+          style={st.linkBtnSecondary}
+          onPress={() => Linking.openURL(`https://maps.google.com/?q=${encodeURIComponent(destination)}`)}
+        >
+          <Text style={st.linkBtnSecondaryText}>Driving Directions →</Text>
+        </Pressable>
+      </View>
+    </SectionCard>
+  );
+}
+
+function AccommodationCard({ info }) {
+  if (!info) return null;
+  return (
+    <SectionCard>
+      <CardTitle>🏨  Where to Stay</CardTitle>
+      {info.recommended_area && (
+        <Text style={st.cardBody}>
+          <Text style={{ fontWeight: '700' }}>Best area: </Text>
+          {info.recommended_area}
+          {info.area_reason ? `  —  ${info.area_reason}` : ''}
+        </Text>
+      )}
+      {info.options?.map((opt, i) => (
+        <View key={i} style={st.hotelRow}>
+          <View style={st.hotelLeft}>
+            <Text style={st.hotelName}>{opt.name}</Text>
+            <Text style={st.hotelTier}>{opt.tier}</Text>
+          </View>
+          {opt.est_price_usd_per_night ? (
+            <Text style={st.hotelPrice}>${opt.est_price_usd_per_night}/night</Text>
+          ) : null}
+        </View>
+      ))}
+      {info.booking_url && (
+        <Pressable style={[st.linkBtn, { marginTop: 10 }]} onPress={() => Linking.openURL(info.booking_url)}>
+          <Text style={st.linkBtnText}>Search on Booking.com →</Text>
+        </Pressable>
+      )}
+    </SectionCard>
+  );
+}
+
+function BudgetCard({ budget }) {
+  if (!budget) return null;
+  const rows = [
+    ['🏨 Accommodation', budget.accommodation_usd],
+    ['🍽️ Food',          budget.food_usd],
+    ['🎟️ Activities',    budget.activities_usd],
+    ['🚕 Transport',     budget.transport_usd],
+  ].filter(([, v]) => v);
+
+  return (
+    <SectionCard>
+      <CardTitle>💰  Estimated Budget</CardTitle>
+      {rows.map(([label, val]) => (
+        <View key={label} style={st.budgetRow}>
+          <Text style={st.budgetLabel}>{label}</Text>
+          <Text style={st.budgetValue}>${val}</Text>
+        </View>
+      ))}
+      <View style={[st.budgetRow, st.budgetTotal]}>
+        <Text style={st.budgetTotalLabel}>Total (per person)</Text>
+        <Text style={st.budgetTotalValue}>${budget.total_usd}</Text>
+      </View>
+      {budget.notes ? <Text style={st.budgetNotes}>{budget.notes}</Text> : null}
+    </SectionCard>
+  );
+}
+
+// ── Form sub-components ───────────────────────────────────────────────────────
 
 function SectionLabel({ children, hint }) {
   return (
@@ -146,15 +301,6 @@ function DateStepper({ label, value, onChange, min }) {
   );
 }
 
-function VibeChip({ vibe, selected, onPress }) {
-  return (
-    <Pressable style={[st.vibeChip, selected && st.vibeChipSelected]} onPress={onPress}>
-      <Text style={st.vibeEmoji}>{vibe.emoji}</Text>
-      <Text style={[st.vibeLabel, selected && st.vibeLabelSelected]}>{vibe.label}</Text>
-    </Pressable>
-  );
-}
-
 function InterestChip({ item, selected, onPress }) {
   return (
     <Pressable style={[st.chip, selected && st.chipSelected]} onPress={onPress}>
@@ -176,92 +322,6 @@ function OptionPill({ item, selected, onPress }) {
   );
 }
 
-// ── Stop card ─────────────────────────────────────────────────────────────────
-
-function StopCard({ stop, destination }) {
-  const emoji = TYPE_EMOJI[stop.poi_type] || '📍';
-
-  function openDirections() {
-    const query = encodeURIComponent(`${stop.name}, ${destination}`);
-    Linking.openURL(`https://maps.google.com/?q=${query}`);
-  }
-
-  return (
-    <View style={st.stopCard}>
-      <View style={st.stopIconCol}>
-        <View style={st.stopIconCircle}>
-          <Text style={st.stopIconEmoji}>{emoji}</Text>
-        </View>
-        <View style={st.stopLine} />
-      </View>
-      <View style={st.stopBody}>
-        <Text style={st.stopName}>{stop.name}</Text>
-        {stop.arrival_time ? (
-          <Text style={st.stopMeta}>
-            {stop.arrival_time}
-            {stop.duration_min > 0 ? `  ·  ${stop.duration_min} min` : ''}
-            {stop.drive_from_prev_min > 0 ? `  ·  🚗 ${stop.drive_from_prev_min} min` : ''}
-          </Text>
-        ) : null}
-        {stop.tip ? <Text style={st.stopTip}>{stop.tip}</Text> : null}
-        <Pressable style={st.directionsBtn} onPress={openDirections}>
-          <Text style={st.directionsBtnText}>📍 Directions</Text>
-        </Pressable>
-      </View>
-    </View>
-  );
-}
-
-// ── Day card ──────────────────────────────────────────────────────────────────
-
-function DayCard({ day, destination }) {
-  const [open, setOpen] = useState(true);
-  return (
-    <View style={st.dayCard}>
-      <Pressable style={st.dayHeader} onPress={() => setOpen(o => !o)}>
-        <View>
-          <Text style={st.dayLabel}>{day.day_label}</Text>
-          <Text style={st.dayStopCount}>{day.stops.length} stop{day.stops.length !== 1 ? 's' : ''}</Text>
-        </View>
-        <Text style={st.dayChevron}>{open ? '▲' : '▼'}</Text>
-      </Pressable>
-      {open && (
-        <View style={st.stopsContainer}>
-          {day.stops.map((stop, i) => (
-            <StopCard key={i} stop={stop} destination={destination} />
-          ))}
-        </View>
-      )}
-    </View>
-  );
-}
-
-// ── Trip summary bar ──────────────────────────────────────────────────────────
-
-function TripSummaryBar({ itinerary, interests }) {
-  const totalStops = itinerary.days.reduce((n, d) => n + d.stops.length, 0);
-  const nights = nightsBetween(itinerary.start_date, itinerary.end_date);
-
-  return (
-    <View style={st.summaryBar}>
-      <SummaryPill emoji="🗓️" label={`${nights + 1} days`} />
-      <SummaryPill emoji="📍" label={`${totalStops} stops`} />
-      {interests.slice(0, 2).map(id => {
-        const item = ALL_INTERESTS.find(i => i.id === id);
-        return item ? <SummaryPill key={id} emoji={item.emoji} label={item.label} /> : null;
-      })}
-    </View>
-  );
-}
-
-function SummaryPill({ emoji, label }) {
-  return (
-    <View style={st.summaryPill}>
-      <Text style={st.summaryPillText}>{emoji} {label}</Text>
-    </View>
-  );
-}
-
 // ── Main screen ───────────────────────────────────────────────────────────────
 
 export default function PlanScreen() {
@@ -275,11 +335,13 @@ export default function PlanScreen() {
   const [style,          setStyle]          = useState('solo');
   const [driveTol,       setDriveTol]       = useState(2);
   const [selectedVibe,   setSelectedVibe]   = useState(null);
-  const [loading,        setLoading]        = useState(false);
-  const [profileLoading, setProfileLoading] = useState(true);
-  const [itinerary,      setItinerary]      = useState(null);
+  const [agentSteps,     setAgentSteps]     = useState([]);
+  const [streaming,      setStreaming]      = useState(false);
+  const [plan,           setPlan]           = useState(null);
   const [error,          setError]          = useState(null);
+  const [profileLoading, setProfileLoading] = useState(true);
   const [token,          setToken]          = useState(null);
+  const readerRef = useRef(null);
 
   // Load profile on mount
   useEffect(() => {
@@ -304,17 +366,14 @@ export default function PlanScreen() {
   }, []);
 
   function applyVibe(vibe) {
-    if (selectedVibe === vibe.id) {
-      setSelectedVibe(null);
-    } else {
-      setSelectedVibe(vibe.id);
-      setInterests(vibe.interests);
-      setPace(vibe.pace);
-    }
+    if (selectedVibe === vibe.id) { setSelectedVibe(null); return; }
+    setSelectedVibe(vibe.id);
+    setInterests(vibe.interests);
+    setPace(vibe.pace);
   }
 
   function toggleInterest(id) {
-    setSelectedVibe(null); // custom selection clears the vibe
+    setSelectedVibe(null);
     setInterests(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
   }
 
@@ -325,15 +384,16 @@ export default function PlanScreen() {
     if (endDate < startDate)  { setError('End date must be after start date.'); return; }
     if (!interests.length)    { setError('Pick at least one interest or a trip vibe.'); return; }
 
-    setLoading(true);
+    setStreaming(true);
     setError(null);
-    setItinerary(null);
+    setPlan(null);
+    setAgentSteps([]);
+
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
 
     try {
-      const headers = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const resp = await fetch(`${API_BASE}/v1/itinerary`, {
+      const resp = await fetch(`${API_BASE}/v1/itinerary/stream`, {
         method: 'POST',
         headers,
         body: JSON.stringify({
@@ -346,58 +406,89 @@ export default function PlanScreen() {
           drive_tolerance_hrs: driveTol,
         }),
       });
+
       if (!resp.ok) {
         const body = await resp.json().catch(() => ({}));
         throw new Error(body.detail || `Error ${resp.status}`);
       }
-      setItinerary(await resp.json());
+
+      const reader  = resp.body.getReader();
+      readerRef.current = reader;
+      const decoder = new TextDecoder();
+      let   buffer  = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // keep incomplete line
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+
+            if (event.type === 'start' || event.type === 'step' || event.type === 'result') {
+              setAgentSteps(prev => [...prev, event.message]);
+            } else if (event.type === 'complete') {
+              setPlan(event.plan);
+              setStreaming(false);
+              return;
+            } else if (event.type === 'error') {
+              throw new Error(event.message);
+            }
+          } catch (parseErr) {
+            if (parseErr.message && !parseErr.message.includes('JSON')) throw parseErr;
+          }
+        }
+      }
     } catch (err) {
       setError(err.message || 'Could not generate itinerary. Try again.');
-    } finally {
-      setLoading(false);
+      setStreaming(false);
     }
   }
 
-  // ── Loading screen ────────────────────────────────────────────────────────
-  if (loading) {
+  // ── Streaming / loading screen ────────────────────────────────────────────
+  if (streaming) {
     return (
       <SafeAreaView style={st.safe}>
-        <View style={st.loadingScreen}>
-          <Text style={st.loadingDest}>{destination}</Text>
-          <LoadingView />
-        </View>
+        <AgentLogView steps={agentSteps} destination={destination} />
       </SafeAreaView>
     );
   }
 
   // ── Results view ──────────────────────────────────────────────────────────
-  if (itinerary) {
+  if (plan) {
     return (
       <SafeAreaView style={st.safe}>
         <ScrollView contentContainerStyle={st.scroll} showsVerticalScrollIndicator={false}>
           {/* Header */}
           <View style={st.resultsHeader}>
-            <Pressable style={st.backBtn} onPress={() => setItinerary(null)}>
+            <Pressable onPress={() => setPlan(null)}>
               <Text style={st.backBtnText}>← New Trip</Text>
             </Pressable>
-            <Text style={st.resultsTitle}>{itinerary.title}</Text>
+            <Text style={st.resultsTitle}>{plan.title}</Text>
             <Text style={st.resultsMeta}>
-              {itinerary.destination}  ·  {displayDate(itinerary.start_date)} – {displayDate(itinerary.end_date)}
+              {plan.destination}  ·  {displayDate(plan.start_date)} – {displayDate(plan.end_date)}
             </Text>
-            {itinerary.summary ? <Text style={st.resultsSummary}>{itinerary.summary}</Text> : null}
-            <TripSummaryBar itinerary={itinerary} interests={interests} />
+            {plan.summary ? <Text style={st.resultsSummary}>{plan.summary}</Text> : null}
           </View>
 
-          {/* Days */}
-          {itinerary.days.map((day, i) => (
-            <DayCard key={i} day={day} destination={itinerary.destination} />
+          <GettingThereCard info={plan.getting_there} destination={plan.destination} />
+          <AccommodationCard info={plan.accommodation} />
+          <BudgetCard budget={plan.budget} />
+
+          {plan.days?.map((day, i) => (
+            <DayCard key={i} day={day} destination={plan.destination} />
           ))}
 
-          {/* Start Live Walk CTA */}
-          <View style={st.walkCTABox}>
+          {/* Live Walk CTA */}
+          <View style={st.walkCTA}>
             <Text style={st.walkCTATitle}>Ready to explore?</Text>
             <Text style={st.walkCTASub}>
-              When you're at {itinerary.destination}, switch to Live Walk for real-time audio stories as you move through these spots.
+              When you arrive, switch to Live Walk for real-time AI audio stories as you move through your stops.
             </Text>
             <Pressable style={st.walkCTABtn} onPress={() => router.push('/(tabs)/live-walk')}>
               <Text style={st.walkCTABtnText}>Start Live Walk →</Text>
@@ -415,15 +506,24 @@ export default function PlanScreen() {
     <SafeAreaView style={st.safe}>
       <ScrollView contentContainerStyle={st.scroll} keyboardShouldPersistTaps="handled">
         <Text style={st.heading}>Plan a Trip</Text>
-        <Text style={st.sub}>Tell TourAI what excites you and it'll build a personalised day-by-day itinerary.</Text>
+        <Text style={st.sub}>
+          Your AI travel agent handles everything — stops, meals, accommodation, commute, and budget.
+        </Text>
 
-        {/* Trip vibe quick-select */}
+        {/* Trip vibes */}
         <SectionLabel hint="Pick a vibe to instantly pre-fill your interests and pace">
           What kind of trip?
         </SectionLabel>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={st.vibeScroll}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 4 }}>
           {TRIP_VIBES.map(v => (
-            <VibeChip key={v.id} vibe={v} selected={selectedVibe === v.id} onPress={() => applyVibe(v)} />
+            <Pressable
+              key={v.id}
+              style={[st.vibeChip, selectedVibe === v.id && st.vibeChipSelected]}
+              onPress={() => applyVibe(v)}
+            >
+              <Text style={st.vibeEmoji}>{v.emoji}</Text>
+              <Text style={[st.vibeLabel, selectedVibe === v.id && st.vibeLabelSelected]}>{v.label}</Text>
+            </Pressable>
           ))}
         </ScrollView>
 
@@ -437,14 +537,12 @@ export default function PlanScreen() {
           placeholderTextColor="#94A3B8"
           returnKeyType="done"
           autoCapitalize="words"
-          editable={!loading}
         />
 
         {/* Dates */}
         <SectionLabel>When?</SectionLabel>
         <DateStepper
-          label="Start"
-          value={startDate}
+          label="Start" value={startDate}
           onChange={v => { setStartDate(v); if (v > endDate) setEndDate(v); }}
         />
         <DateStepper label="End" value={endDate} onChange={setEndDate} min={startDate} />
@@ -455,16 +553,15 @@ export default function PlanScreen() {
         )}
 
         {/* Interests */}
-        <View style={st.sectionHeaderRow}>
-          <Text style={st.sectionLabel}>Fine-tune your interests</Text>
-          {profileLoading && <ActivityIndicator size="small" color={ACCENT} style={{ marginLeft: 8, marginTop: 20 }} />}
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 20, marginBottom: 4 }}>
+          <Text style={[st.sectionLabel, { marginTop: 0 }]}>Fine-tune your interests</Text>
+          {profileLoading && <ActivityIndicator size="small" color={ACCENT} style={{ marginLeft: 8 }} />}
         </View>
         <Text style={st.sectionHint}>Pre-filled from your profile. Tap to toggle.</Text>
         <View style={st.chipGrid}>
           {ALL_INTERESTS.map(item => (
             <InterestChip
-              key={item.id}
-              item={item}
+              key={item.id} item={item}
               selected={interests.includes(item.id)}
               onPress={() => toggleInterest(item.id)}
             />
@@ -474,28 +571,20 @@ export default function PlanScreen() {
         {/* Pace */}
         <SectionLabel>Trip pace</SectionLabel>
         <View style={st.pillRow}>
-          {PACE_OPTIONS.map(o => (
-            <OptionPill key={o.id} item={o} selected={pace === o.id} onPress={() => setPace(o.id)} />
-          ))}
+          {PACE_OPTIONS.map(o => <OptionPill key={o.id} item={o} selected={pace === o.id} onPress={() => setPace(o.id)} />)}
         </View>
 
-        {/* Travel style */}
+        {/* Style */}
         <SectionLabel>Travelling as</SectionLabel>
         <View style={st.pillRow}>
-          {STYLE_OPTIONS.map(o => (
-            <OptionPill key={o.id} item={o} selected={style === o.id} onPress={() => setStyle(o.id)} />
-          ))}
+          {STYLE_OPTIONS.map(o => <OptionPill key={o.id} item={o} selected={style === o.id} onPress={() => setStyle(o.id)} />)}
         </View>
 
         {/* Drive tolerance */}
         <SectionLabel>Max drive between stops</SectionLabel>
         <View style={st.driveRow}>
           {[0.5, 1, 2, 4].map(h => (
-            <Pressable
-              key={h}
-              style={[st.driveBtn, driveTol === h && st.driveBtnSelected]}
-              onPress={() => setDriveTol(h)}
-            >
+            <Pressable key={h} style={[st.driveBtn, driveTol === h && st.driveBtnSelected]} onPress={() => setDriveTol(h)}>
               <Text style={[st.driveBtnText, driveTol === h && st.driveBtnTextSelected]}>
                 {h < 1 ? '30 min' : `${h}h`}
               </Text>
@@ -526,24 +615,18 @@ const st = StyleSheet.create({
   heading: { fontSize: 26, fontWeight: '800', color: '#0F172A', marginBottom: 6 },
   sub:     { fontSize: 14, color: '#64748B', lineHeight: 21, marginBottom: 8 },
 
-  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center' },
-  sectionLabel:     { fontSize: 13, fontWeight: '700', color: '#0F172A', marginTop: 20, marginBottom: 4 },
-  sectionHint:      { fontSize: 12, color: '#94A3B8', marginBottom: 8 },
+  sectionLabel: { fontSize: 13, fontWeight: '700', color: '#0F172A', marginTop: 20, marginBottom: 4 },
+  sectionHint:  { fontSize: 12, color: '#94A3B8', marginBottom: 8 },
 
   input: {
-    backgroundColor: '#fff',
-    borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12,
-    paddingHorizontal: 14, paddingVertical: 12,
-    fontSize: 16, color: '#0F172A',
+    backgroundColor: '#fff', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 12, fontSize: 16, color: '#0F172A',
   },
 
   // Vibe chips
-  vibeScroll: { marginBottom: 4 },
   vibeChip: {
-    alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: 16, paddingVertical: 10,
-    borderRadius: 20, borderWidth: 1.5, borderColor: '#E2E8F0',
-    backgroundColor: '#fff', marginRight: 8,
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, paddingVertical: 10,
+    borderRadius: 20, borderWidth: 1.5, borderColor: '#E2E8F0', backgroundColor: '#fff', marginRight: 8,
   },
   vibeChipSelected: { backgroundColor: '#EEF2FF', borderColor: ACCENT },
   vibeEmoji:        { fontSize: 20, marginBottom: 2 },
@@ -604,70 +687,114 @@ const st = StyleSheet.create({
   generateBtn:     { backgroundColor: ACCENT, borderRadius: 14, paddingVertical: 15, alignItems: 'center', marginTop: 20 },
   generateBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 
-  // Loading screen
-  loadingScreen: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
-  loadingDest:   { fontSize: 28, fontWeight: '800', color: '#0F172A', marginBottom: 40, textAlign: 'center' },
-  loadingBox:    { alignItems: 'center', gap: 16 },
-  loadingMsg:    { fontSize: 16, color: '#475569', fontWeight: '600', textAlign: 'center' },
-  loadingHint:   { fontSize: 13, color: '#94A3B8' },
+  // Agent loading screen
+  agentScreen: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32, backgroundColor: '#0F172A' },
+  agentDest:   { fontSize: 30, fontWeight: '800', color: '#fff', marginBottom: 32, textAlign: 'center' },
+  agentLog:    { width: '100%', gap: 8, marginBottom: 24 },
+  agentStep:   { fontSize: 14, color: '#64748B', textAlign: 'center' },
+  agentHint:   { fontSize: 12, color: '#334155' },
+
+  // Section cards (results)
+  sectionCard: {
+    backgroundColor: '#fff', borderRadius: 16, marginBottom: 12,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 1 },
+    elevation: 1, overflow: 'hidden',
+  },
+  cardTitle: { fontSize: 15, fontWeight: '800', color: '#0F172A', padding: 16, paddingBottom: 8 },
+  cardBody:  { fontSize: 13, color: '#475569', paddingHorizontal: 16, paddingBottom: 10, lineHeight: 19 },
 
   // Results header
   resultsHeader: {
-    backgroundColor: '#fff', borderRadius: 16, padding: 18, marginBottom: 16,
+    backgroundColor: '#fff', borderRadius: 16, padding: 18, marginBottom: 12,
     shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
     elevation: 2,
   },
-  backBtn:        { marginBottom: 12 },
-  backBtnText:    { fontSize: 14, color: ACCENT, fontWeight: '600' },
+  backBtnText:    { fontSize: 14, color: ACCENT, fontWeight: '600', marginBottom: 12 },
   resultsTitle:   { fontSize: 22, fontWeight: '800', color: '#0F172A', marginBottom: 4 },
   resultsMeta:    { fontSize: 13, color: '#64748B', marginBottom: 8 },
-  resultsSummary: { fontSize: 14, color: '#475569', lineHeight: 20, marginBottom: 14 },
+  resultsSummary: { fontSize: 14, color: '#475569', lineHeight: 20 },
 
-  // Summary bar
-  summaryBar: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  summaryPill: {
-    backgroundColor: '#F1F5F9', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12,
+  // Getting there
+  linkRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingBottom: 14, flexWrap: 'wrap' },
+  linkBtn: {
+    backgroundColor: ACCENT, paddingHorizontal: 14, paddingVertical: 8,
+    borderRadius: 10, alignSelf: 'flex-start',
   },
-  summaryPillText: { fontSize: 12, fontWeight: '600', color: '#334155' },
+  linkBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  linkBtnSecondary: {
+    backgroundColor: '#F1F5F9', paddingHorizontal: 14, paddingVertical: 8,
+    borderRadius: 10, alignSelf: 'flex-start',
+  },
+  linkBtnSecondaryText: { color: '#334155', fontSize: 13, fontWeight: '600' },
 
-  // Day cards
-  dayCard: {
-    backgroundColor: '#fff', borderRadius: 14, marginBottom: 12, overflow: 'hidden',
-    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 1 },
-    elevation: 1,
-  },
-  dayHeader: {
+  // Accommodation
+  hotelRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingVertical: 14,
+    paddingHorizontal: 16, paddingVertical: 8, borderTopWidth: 1, borderTopColor: '#F1F5F9',
+  },
+  hotelLeft:  { flex: 1 },
+  hotelName:  { fontSize: 14, fontWeight: '600', color: '#1E293B' },
+  hotelTier:  { fontSize: 12, color: '#94A3B8', textTransform: 'capitalize' },
+  hotelPrice: { fontSize: 14, fontWeight: '700', color: ACCENT },
+
+  // Budget
+  budgetRow: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingVertical: 7, borderTopWidth: 1, borderTopColor: '#F8FAFC',
+  },
+  budgetLabel:      { fontSize: 13, color: '#475569' },
+  budgetValue:      { fontSize: 13, fontWeight: '600', color: '#1E293B' },
+  budgetTotal:      { borderTopWidth: 1, borderTopColor: '#E2E8F0', marginTop: 2, paddingTop: 10 },
+  budgetTotalLabel: { fontSize: 14, fontWeight: '700', color: '#0F172A' },
+  budgetTotalValue: { fontSize: 16, fontWeight: '800', color: ACCENT },
+  budgetNotes:      { fontSize: 12, color: '#94A3B8', paddingHorizontal: 16, paddingBottom: 12, fontStyle: 'italic' },
+
+  // Day header
+  dayHeader: {
+    flexDirection: 'row', alignItems: 'center', padding: 16,
     borderBottomWidth: 1, borderBottomColor: '#F1F5F9',
   },
-  dayLabel:      { fontSize: 15, fontWeight: '700', color: '#0F172A' },
-  dayStopCount:  { fontSize: 12, color: '#94A3B8', marginTop: 2 },
-  dayChevron:    { fontSize: 11, color: '#94A3B8' },
-  stopsContainer: { padding: 16 },
+  dayLabel:   { fontSize: 15, fontWeight: '700', color: '#0F172A' },
+  dayMeta:    { fontSize: 12, color: '#94A3B8', marginTop: 2 },
+  dayChevron: { fontSize: 11, color: '#94A3B8', marginLeft: 8 },
+
+  // Weather badge
+  weatherBadge: {
+    backgroundColor: '#F0FDF4', paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 8, marginRight: 8,
+  },
+  weatherText: { fontSize: 11, color: '#166534', fontWeight: '600' },
+
+  // Transit pill
+  transitPill: {
+    alignSelf: 'flex-start', marginLeft: 56, marginBottom: 4,
+    backgroundColor: '#F8FAFC', paddingHorizontal: 10, paddingVertical: 4,
+    borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0',
+  },
+  transitText: { fontSize: 11, color: '#64748B' },
 
   // Stop cards
-  stopCard:      { flexDirection: 'row', marginBottom: 16 },
-  stopIconCol:   { width: 36, alignItems: 'center', marginRight: 12 },
+  stopWrap:  { paddingHorizontal: 16, paddingTop: 12 },
+  stopCard:  { flexDirection: 'row', marginBottom: 4 },
   stopIconCircle: {
-    width: 34, height: 34, borderRadius: 17,
-    backgroundColor: '#EEF2FF', alignItems: 'center', justifyContent: 'center',
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: '#EEF2FF', alignItems: 'center', justifyContent: 'center', marginRight: 12,
   },
-  stopIconEmoji: { fontSize: 16 },
-  stopLine:      { flex: 1, width: 1.5, backgroundColor: '#E2E8F0', marginTop: 4 },
-  stopBody:      { flex: 1 },
-  stopName:      { fontSize: 14, fontWeight: '700', color: '#1E293B', marginBottom: 2 },
-  stopMeta:      { fontSize: 12, color: '#94A3B8', marginBottom: 6 },
-  stopTip:       { fontSize: 13, color: '#475569', lineHeight: 19, marginBottom: 8 },
-  directionsBtn: { alignSelf: 'flex-start' },
-  directionsBtnText: { fontSize: 12, color: ACCENT, fontWeight: '600' },
+  stopIconMeal: { backgroundColor: '#FEF3C7' },
+  stopIconEmoji: { fontSize: 17 },
+  stopBody:  { flex: 1, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  stopHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 },
+  stopName:  { fontSize: 14, fontWeight: '700', color: '#1E293B', flex: 1 },
+  mealBadge: { backgroundColor: '#FEF3C7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  mealBadgeText: { fontSize: 10, fontWeight: '700', color: '#92400E' },
+  stopMeta:  { fontSize: 12, color: '#94A3B8', marginBottom: 4 },
+  stopTip:   { fontSize: 13, color: '#475569', lineHeight: 19, marginBottom: 6 },
+  directionsLink: { fontSize: 12, color: ACCENT, fontWeight: '600' },
 
   // Walk CTA
-  walkCTABox: {
-    backgroundColor: '#1E1B4B', borderRadius: 16, padding: 20, marginTop: 8,
-  },
-  walkCTATitle:    { fontSize: 17, fontWeight: '800', color: '#fff', marginBottom: 6 },
-  walkCTASub:      { fontSize: 13, color: '#A5B4FC', lineHeight: 19, marginBottom: 16 },
-  walkCTABtn:      { backgroundColor: ACCENT, borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
-  walkCTABtnText:  { color: '#fff', fontSize: 14, fontWeight: '700' },
+  walkCTA: { backgroundColor: '#1E1B4B', borderRadius: 16, padding: 20, marginTop: 8 },
+  walkCTATitle:   { fontSize: 17, fontWeight: '800', color: '#fff', marginBottom: 6 },
+  walkCTASub:     { fontSize: 13, color: '#A5B4FC', lineHeight: 19, marginBottom: 16 },
+  walkCTABtn:     { backgroundColor: ACCENT, borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
+  walkCTABtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
 });

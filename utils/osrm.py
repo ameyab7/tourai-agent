@@ -85,6 +85,32 @@ async def get_street_ahead(
     return await _snap_street(proj_lat, proj_lon)
 
 
+async def get_drive_time(
+    from_lat: float, from_lon: float,
+    to_lat:   float, to_lon:   float,
+) -> dict:
+    """Return driving duration and distance between two coordinates via OSRM.
+
+    Returns: {duration_min, distance_km}  or  {duration_min: None, distance_km: None} on error.
+    """
+    url    = f"/route/v1/driving/{from_lon},{from_lat};{to_lon},{to_lat}"
+    params = {"overview": "false", "steps": "false"}
+    try:
+        resp = await _http.get(url, params=params)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("code") != "Ok":
+            raise ValueError(data.get("message", "OSRM error"))
+        route = data["routes"][0]
+        return {
+            "duration_min": round(route["duration"] / 60),
+            "distance_km":  round(route["distance"] / 1000, 1),
+        }
+    except Exception as e:
+        logger.warning("get_drive_time failed: %s", e)
+        return {"duration_min": None, "distance_km": None}
+
+
 async def walking_route(
     start_lat: float, start_lon: float,
     end_lat:   float, end_lon:   float,
