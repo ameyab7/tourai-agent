@@ -15,9 +15,13 @@ CREATE TABLE IF NOT EXISTS profiles (
   travel_style        TEXT,
   pace                TEXT,
   drive_tolerance_hrs REAL,
+  is_premium          BOOLEAN NOT NULL DEFAULT FALSE,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Add is_premium to existing tables that predate this migration
+ALTER TABLE IF EXISTS profiles ADD COLUMN IF NOT EXISTS is_premium BOOLEAN NOT NULL DEFAULT FALSE;
 """
 
 _CREATE_POLICIES = [

@@ -11,7 +11,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import * as Speech from 'expo-speech';
 import { StatusBar } from 'expo-status-bar';
+import { router } from 'expo-router';
 import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
+import { isPremium } from '../../lib/purchases';
 
 import BottomBar from '../../components/BottomBar';
 import GlowMarker from '../../components/GlowMarker';
@@ -114,9 +116,52 @@ async function askQuestion(question, lat, lon, nearbyPois) {
   return data.answer ?? 'No answer received.';
 }
 
+// ── Constants ────────────────────────────────────────────────────────────────
+const PREVIEW_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+
 // ── Screen ────────────────────────────────────────────────────────────────────
 
 export default function LiveWalkScreen() {
+  const [premium,        setPremium]        = useState(null); // null = checking
+  const [previewExpired, setPreviewExpired] = useState(false);
+  const previewTimerRef = useRef(null);
+
+  // Check premium status on mount
+  useEffect(() => {
+    isPremium().then(ok => {
+      setPremium(ok);
+      if (!ok) {
+        // Start 15-min preview countdown
+        previewTimerRef.current = setTimeout(() => setPreviewExpired(true), PREVIEW_DURATION_MS);
+      }
+    });
+    return () => clearTimeout(previewTimerRef.current);
+  }, []);
+
+  // Show nothing while checking
+  if (premium === null) return <View style={{ flex: 1, backgroundColor: '#000' }} />;
+
+  // Non-premium + preview expired → hard paywall
+  if (!premium && previewExpired) {
+    return (
+      <SafeAreaView style={gate.safe}>
+        <View style={gate.box}>
+          <Text style={gate.emoji}>🔒</Text>
+          <Text style={gate.title}>Your preview has ended</Text>
+          <Text style={gate.sub}>
+            Upgrade to Premium to keep exploring with AI-powered audio tours.
+          </Text>
+          <Pressable style={gate.btn} onPress={() => router.push('/paywall')}>
+            <Text style={gate.btnText}>See Premium Plans</Text>
+          </Pressable>
+          <Pressable style={gate.backBtn} onPress={() => router.replace('/(tabs)')}>
+            <Text style={gate.backText}>Go back to Home</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   const [location, setLocation]     = useState(null);
   const [visiblePois, setVisiblePois] = useState([]);
   const [streetName, setStreetName] = useState(null);
@@ -319,6 +364,13 @@ export default function LiveWalkScreen() {
     <SafeAreaView style={styles.safe}>
       <StatusBar style="dark" />
 
+      {/* Soft paywall banner for free-tier preview */}
+      {!premium && (
+        <Pressable style={gate.banner} onPress={() => router.push('/paywall')}>
+          <Text style={gate.bannerText}>⏱ Free preview · Tap to unlock full access</Text>
+        </Pressable>
+      )}
+
       <MapView
         ref={mapRef}
         style={styles.map}
@@ -482,4 +534,26 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: '500',
   },
+});
+
+const gate = StyleSheet.create({
+  safe:    { flex: 1, backgroundColor: '#FFFFFF' },
+  box:     { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32, gap: 16 },
+  emoji:   { fontSize: 52 },
+  title:   { fontSize: 24, fontWeight: '800', color: '#0F172A', textAlign: 'center' },
+  sub:     { fontSize: 15, color: '#64748B', textAlign: 'center', lineHeight: 23 },
+  btn: {
+    backgroundColor: '#0F172A', borderRadius: 14,
+    paddingVertical: 16, paddingHorizontal: 32, marginTop: 8,
+  },
+  btnText:  { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+  backBtn:  { paddingVertical: 8 },
+  backText: { fontSize: 14, color: '#94A3B8' },
+  banner: {
+    backgroundColor: '#0F172A',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  bannerText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600' },
 });

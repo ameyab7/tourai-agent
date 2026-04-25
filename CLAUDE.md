@@ -107,7 +107,7 @@ The main free-tier entry point. Replaces the current "drop straight into map" UX
 ---
 
 ### Phase 5 — Premium Gate on Live Walk
-**Status: NOT STARTED**
+**Status: ✅ COMPLETE (mock RevenueCat — swap key when ready)**
 **Effort: ~3 days (after Phase 3)**
 
 - [ ] Add RevenueCat SDK to mobile for subscription management (iOS + Android in-app purchase)
@@ -218,7 +218,7 @@ The largest new surface in the PRD. A separate planning mode for multi-day trips
 | 2 | Onboarding flow | ✅ Complete |
 | 3 | Supabase Auth + persistent profiles | ✅ Complete (see Known Issues #1–3) |
 | 4 | Home / Discover screen + mood check-in + GPS + Walk CTA | ✅ Complete |
-| 5 | Premium gate (RevenueCat) | ⬜ Not started |
+| 5 | Premium gate (RevenueCat) | ✅ Complete (mock mode) |
 | 6 | Trip Itinerary Generator | ⬜ Not started |
 | 7 | Map enhancements (golden hour, photos) | ⬜ Not started |
 | 8 | Astronomy / moon phase | ⬜ Not started |
