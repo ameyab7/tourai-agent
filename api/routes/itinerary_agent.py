@@ -243,6 +243,74 @@ def _sse(payload: dict) -> str:
     return f"data: {json.dumps(payload)}\n\n"
 
 
+# ── Groq streaming helper ─────────────────────────────────────────────────────
+
+class _Msg:
+    """Reconstructed message from a streamed Groq response."""
+    def __init__(self, content: str, tool_calls: list | None):
+        self.content    = content
+        self.tool_calls = tool_calls
+
+
+class _TC:
+    """Reconstructed tool call."""
+    def __init__(self, id: str, name: str, arguments: str):
+        self.id       = id
+
+        class _Fn:
+            pass
+        fn            = _Fn()
+        fn.name       = name
+        fn.arguments  = arguments
+        self.function = fn
+
+
+async def _groq_call(client, system: str, messages: list) -> _Msg:
+    """Call openai/gpt-oss-120b with stream=True and collect into a _Msg."""
+    stream = await client.chat.completions.create(
+        model="openai/gpt-oss-120b",
+        messages=[{"role": "system", "content": system}] + messages,
+        tools=TOOLS,
+        tool_choice="auto",
+        temperature=1,
+        max_completion_tokens=8192,
+        top_p=1,
+        reasoning_effort="medium",
+        stream=True,
+    )
+
+    content: str        = ""
+    tc_map: dict        = {}   # index → {id, name, arguments}
+
+    async for chunk in stream:
+        choice = chunk.choices[0] if chunk.choices else None
+        if not choice:
+            continue
+        delta = choice.delta
+
+        if delta.content:
+            content += delta.content
+
+        if delta.tool_calls:
+            for tc_delta in delta.tool_calls:
+                idx = tc_delta.index
+                if idx not in tc_map:
+                    tc_map[idx] = {"id": "", "name": "", "arguments": ""}
+                if tc_delta.id:
+                    tc_map[idx]["id"] = tc_delta.id
+                if tc_delta.function:
+                    if tc_delta.function.name:
+                        tc_map[idx]["name"]      += tc_delta.function.name
+                    if tc_delta.function.arguments:
+                        tc_map[idx]["arguments"] += tc_delta.function.arguments
+
+    tool_calls = (
+        [_TC(v["id"], v["name"], v["arguments"]) for v in tc_map.values()]
+        if tc_map else None
+    )
+    return _Msg(content, tool_calls)
+
+
 # ── Agent loop ────────────────────────────────────────────────────────────────
 
 async def _run_agent(
@@ -265,7 +333,7 @@ async def _run_agent(
     from utils.weather import get_forecast
     from utils.golden_hour import get_light_windows
 
-    groq_client = AsyncGroq(api_key=settings.groq_api_key)
+    groq_client = AsyncGroq(api_key=settings.groq_api_key)   # AsyncGroq for streaming
     system      = _build_system_prompt(interests, pace, style, drive_tol)
 
     d0    = date.fromisoformat(start_date)
@@ -347,16 +415,7 @@ async def _run_agent(
 
     # ── Phase 3: agent planning loop (1–2 iterations expected) ───────────────
     for iteration in range(MAX_ITERATIONS):
-        resp = await groq_client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "system", "content": system}] + messages,
-            tools=TOOLS,
-            tool_choice="auto",
-            max_tokens=4000,
-            temperature=0.3,
-        )
-
-        msg = resp.choices[0].message
+        msg = await _groq_call(groq_client, system, messages)
 
         # No tool calls → agent has output the final plan
         if not msg.tool_calls:
@@ -422,7 +481,16 @@ async def _run_agent(
                 "content":      result,
             })
 
-        messages.append({"role": "assistant", "content": msg.content or "", "tool_calls": msg.tool_calls})
+        # Reconstruct tool_calls in OpenAI wire format for the next message
+        raw_tool_calls = [
+            {
+                "id":       tc.id,
+                "type":     "function",
+                "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+            }
+            for tc in (msg.tool_calls or [])
+        ]
+        messages.append({"role": "assistant", "content": msg.content or "", "tool_calls": raw_tool_calls})
         messages.extend(tool_results)
 
         await asyncio.sleep(0)
