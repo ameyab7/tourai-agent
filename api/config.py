@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     supabase_url:         str = Field("", alias="SUPABASE_URL")
     supabase_service_key: str = Field("", alias="SUPABASE_SERVICE_KEY")
     database_url:         str = Field("", alias="DATABASE_URL")
+    google_places_api_key: str = Field("", alias="GOOGLE_PLACES_API_KEY")
 
     @field_validator("geoapify_api_key", mode="before")
     @classmethod

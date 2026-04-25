@@ -119,29 +119,25 @@ async function askQuestion(question, lat, lon, nearbyPois) {
 // ── Constants ────────────────────────────────────────────────────────────────
 const PREVIEW_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 
-// ── Screen ────────────────────────────────────────────────────────────────────
+// ── Premium gate wrapper ──────────────────────────────────────────────────────
 
-export default function LiveWalkScreen() {
-  const [premium,        setPremium]        = useState(null); // null = checking
+export default function LiveWalkGate() {
+  const [premium,        setPremium]        = useState(null);
   const [previewExpired, setPreviewExpired] = useState(false);
   const previewTimerRef = useRef(null);
 
-  // Check premium status on mount
   useEffect(() => {
     isPremium().then(ok => {
       setPremium(ok);
       if (!ok) {
-        // Start 15-min preview countdown
         previewTimerRef.current = setTimeout(() => setPreviewExpired(true), PREVIEW_DURATION_MS);
       }
     });
     return () => clearTimeout(previewTimerRef.current);
   }, []);
 
-  // Show nothing while checking
   if (premium === null) return <View style={{ flex: 1, backgroundColor: '#000' }} />;
 
-  // Non-premium + preview expired → hard paywall
   if (!premium && previewExpired) {
     return (
       <SafeAreaView style={gate.safe}>
@@ -162,6 +158,12 @@ export default function LiveWalkScreen() {
     );
   }
 
+  return <LiveWalkScreen premium={premium} />;
+}
+
+// ── Screen ────────────────────────────────────────────────────────────────────
+
+function LiveWalkScreen({ premium }) {
   const [location, setLocation]     = useState(null);
   const [visiblePois, setVisiblePois] = useState([]);
   const [streetName, setStreetName] = useState(null);

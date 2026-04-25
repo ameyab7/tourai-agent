@@ -6,130 +6,87 @@
  *   2. Set MOCK_MODE = false
  *   3. Replace REVENUECAT_API_KEY with your real key from revenuecat.com
  *   4. Run `npx expo prebuild` to link the native module
+ *   5. Revert `active = true` back to `active = val === 'true'`
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const MOCK_MODE          = true;
-const REVENUECAT_API_KEY = 'appl_REPLACE_WITH_YOUR_KEY';
+const MOCK_MODE = true;
 
-// AsyncStorage key used in mock mode to persist premium status across restarts
 const MOCK_PREMIUM_KEY = 'mock_is_premium';
 
-// ---------------------------------------------------------------------------
-// Mock implementation — mirrors the RevenueCat SDK surface
-// ---------------------------------------------------------------------------
-
-const Mock = {
-  async configure() {
-    // no-op in mock
+export const PRODUCTS = [
+  {
+    id:          'tourai_monthly',
+    title:       'Monthly',
+    priceString: '$7.99/mo',
+    price:       7.99,
+    packageType: 'MONTHLY',
   },
-
-  async getCustomerInfo() {
-    // Temporarily returning premium=true so the gate doesn't block during dev.
-    // Change `active` back to `val === 'true'` when ready to test the paywall.
-    const val = await AsyncStorage.getItem(MOCK_PREMIUM_KEY);
-    const active = true; // val === 'true'
-    return {
-      entitlements: {
-        active: active ? { premium: { isActive: true } } : {},
-      },
-    };
+  {
+    id:          'tourai_annual',
+    title:       'Annual',
+    priceString: '$59.99/yr',
+    price:       59.99,
+    packageType: 'ANNUAL',
+    savings:     'Save 37%',
   },
+];
 
-  async purchasePackage(pkg) {
-    // Simulate a successful purchase
-    await AsyncStorage.setItem(MOCK_PREMIUM_KEY, 'true');
-    return await Mock.getCustomerInfo();
-  },
-
-  async restorePurchases() {
-    return await Mock.getCustomerInfo();
-  },
-
-  // Dev helper — toggle premium without going through purchase flow
-  async _devSetPremium(value) {
-    await AsyncStorage.setItem(MOCK_PREMIUM_KEY, value ? 'true' : 'false');
-  },
-
-  PRODUCTS: [
-    {
-      id:             'tourai_monthly',
-      title:          'Monthly',
-      priceString:    '$7.99/mo',
-      price:          7.99,
-      packageType:    'MONTHLY',
+async function getMockCustomerInfo() {
+  // Temporarily returning premium=true so the gate doesn't block during dev.
+  // Change `active` back to `val === 'true'` when ready to test the paywall.
+  const val    = await AsyncStorage.getItem(MOCK_PREMIUM_KEY);
+  const active = true; // val === 'true'
+  return {
+    entitlements: {
+      active: active ? { premium: { isActive: true } } : {},
     },
-    {
-      id:             'tourai_annual',
-      title:          'Annual',
-      priceString:    '$59.99/yr',
-      price:          59.99,
-      packageType:    'ANNUAL',
-      savings:        'Save 37%',
-    },
-  ],
-};
-
-// ---------------------------------------------------------------------------
-// Live implementation — thin wrapper around react-native-purchases
-// ---------------------------------------------------------------------------
-
-const Live = {
-  async configure() {
-    const Purchases = require('react-native-purchases').default;
-    Purchases.configure({ apiKey: REVENUECAT_API_KEY });
-  },
-
-  async getCustomerInfo() {
-    const Purchases = require('react-native-purchases').default;
-    return Purchases.getCustomerInfo();
-  },
-
-  async purchasePackage(pkg) {
-    const Purchases = require('react-native-purchases').default;
-    const { customerInfo } = await Purchases.purchasePackage(pkg);
-    return customerInfo;
-  },
-
-  async restorePurchases() {
-    const Purchases = require('react-native-purchases').default;
-    return Purchases.restorePurchases();
-  },
-
-  PRODUCTS: null, // fetched dynamically from RevenueCat dashboard
-};
-
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
-
-const impl = MOCK_MODE ? Mock : Live;
+  };
+}
 
 export async function configurePurchases() {
-  await impl.configure();
+  if (!MOCK_MODE) {
+    // Swap to live when react-native-purchases is installed
+    // const Purchases = require('react-native-purchases').default;
+    // Purchases.configure({ apiKey: 'appl_REPLACE_WITH_YOUR_KEY' });
+  }
 }
 
 export async function isPremium() {
   try {
-    const info = await impl.getCustomerInfo();
-    return !!info.entitlements.active?.premium?.isActive;
+    if (MOCK_MODE) {
+      const info = await getMockCustomerInfo();
+      return !!info.entitlements.active?.premium?.isActive;
+    }
+    // Live: const info = await require('react-native-purchases').default.getCustomerInfo();
+    // return !!info.entitlements.active?.premium?.isActive;
+    return false;
   } catch {
     return false;
   }
 }
 
 export async function purchasePackage(pkg) {
-  const info = await impl.purchasePackage(pkg);
-  return !!info.entitlements.active?.premium?.isActive;
+  if (MOCK_MODE) {
+    await AsyncStorage.setItem(MOCK_PREMIUM_KEY, 'true');
+    return true;
+  }
+  // Live: const { customerInfo } = await require('react-native-purchases').default.purchasePackage(pkg);
+  // return !!customerInfo.entitlements.active?.premium?.isActive;
+  return false;
 }
 
 export async function restorePurchases() {
-  const info = await impl.restorePurchases();
-  return !!info.entitlements.active?.premium?.isActive;
+  if (MOCK_MODE) {
+    const info = await getMockCustomerInfo();
+    return !!info.entitlements.active?.premium?.isActive;
+  }
+  // Live: const info = await require('react-native-purchases').default.restorePurchases();
+  // return !!info.entitlements.active?.premium?.isActive;
+  return false;
 }
 
-export const PRODUCTS = impl.PRODUCTS;
-
-// Dev-only toggle (mock mode only)
-export const _devSetPremium = MOCK_MODE ? Mock._devSetPremium : null;
+export async function _devSetPremium(value) {
+  if (MOCK_MODE) await AsyncStorage.setItem(MOCK_PREMIUM_KEY, value ? 'true' : 'false');
+}

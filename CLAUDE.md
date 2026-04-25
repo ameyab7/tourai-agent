@@ -134,26 +134,27 @@ The main free-tier entry point. Replaces the current "drop straight into map" UX
 
 The largest new surface in the PRD. A separate planning mode for multi-day trips.
 
-**Mobile (`mobile/app/(tabs)/plan.tsx`):**
-- [ ] Destination input (autocomplete via Google Places)
-- [ ] Date range picker (departure + return)
-- [ ] Review inferred constraints (drive tolerance, travel style from profile)
-- [ ] Generated itinerary view: day-by-day cards with stops, drive legs, timing notes
-- [ ] Each stop: photo, why-recommended, hours, booking link, sell-out warning if applicable
-- [ ] Save / export itinerary
+**Mobile (`mobile/app/(tabs)/plan.js`):**
+- [x] Destination text input
+- [x] Date range stepper (start + end, no native module needed)
+- [x] Nights / days count label
+- [x] "Plan My Trip" button → calls `/v1/itinerary`
+- [x] Loading state with helpful hint text
+- [x] Generated itinerary view: collapsible day cards with timeline stops
+- [ ] Each stop: photo header (Phase 7), booking link, save / export itinerary
 
 **Backend (`api/routes/itinerary.py`):**
-- [ ] `POST /v1/itinerary` — accepts `{ destination, start_date, end_date, user_id }`
-- [ ] Pull user profile for interests, pace, drive tolerance
-- [ ] Fetch POIs along route corridor (Overpass or Google Places)
-- [ ] LLM call (Gemini) to generate narrative itinerary with timing, drive splits, insider tips
-- [ ] Drive splitting: break legs that exceed user's tolerance with overnight stop suggestions
-- [ ] Return structured JSON: `{ days: [{ date, stops: [{ poi, drive_from_prev_m, arrival_time, tip }] }] }`
+- [x] `POST /v1/itinerary` — accepts `{ destination, start_date, end_date, interests, travel_style, pace, drive_tolerance_hrs }`
+- [x] Pull user profile for interests, pace, drive tolerance (via optional JWT)
+- [x] Fetch POIs from Overpass for destination area (5 km radius, 3 mirrors)
+- [x] Groq LLM (llama-3.3-70b) generates narrative itinerary with timing, drive splits, insider tips
+- [x] Drive splitting: flags legs exceeding tolerance with overnight-stop note in tip
+- [x] Returns structured JSON: `{ title, summary, days: [{ date, day_label, stops }] }`
 
-**Google Places integration:**
-- [ ] Add `GOOGLE_PLACES_API_KEY` env var
-- [ ] `utils/google_places.py` — search nearby, get details (photos, hours, rating, price level)
-- [ ] Use as enrichment layer on top of Overpass OSM data (OSM for geometry, Places for photos/hours)
+**Google Places / Geocoding:**
+- [x] Add `GOOGLE_PLACES_API_KEY` env var to `api/config.py`
+- [x] `utils/google_places.py` — Nominatim geocoding (free) + Google Places photo URL helper
+- [ ] Photo enrichment on stop cards (Phase 7)
 
 ---
 
@@ -228,7 +229,7 @@ The largest new surface in the PRD. A separate planning mode for multi-day trips
 | 3 | Supabase Auth + persistent profiles | ✅ Complete (see Known Issues #1–3) |
 | 4 | Home / Discover screen + mood check-in + GPS + Walk CTA | ✅ Complete |
 | 5 | Premium gate (RevenueCat) | ✅ Complete (mock mode) |
-| 6 | Trip Itinerary Generator | ⬜ Not started |
+| 6 | Trip Itinerary Generator | ✅ Complete |
 | 7 | Map enhancements (golden hour, photos) | ⬜ Not started |
 | 8 | Astronomy / moon phase | ⬜ Not started |
 | 9 | Web platform (Next.js) | ⬜ Not started |

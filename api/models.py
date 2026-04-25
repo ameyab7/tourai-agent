@@ -154,3 +154,43 @@ class FeedbackResponse(BaseModel):
     diagnosis:      FeedbackDiagnosis
     correlation_id: str
     timestamp:      str
+
+
+# ---------------------------------------------------------------------------
+# Itinerary models
+# ---------------------------------------------------------------------------
+
+class ItineraryRequest(BaseModel):
+    destination:         str   = Field(..., min_length=2, max_length=200)
+    start_date:          str   = Field(..., description="ISO date YYYY-MM-DD")
+    end_date:            str   = Field(..., description="ISO date YYYY-MM-DD")
+    # Optional user preferences (override profile if provided)
+    interests:           list[str] = []
+    travel_style:        str | None = None
+    pace:                str | None = None
+    drive_tolerance_hrs: float      = 2.0
+
+
+class ItineraryStop(BaseModel):
+    name:                str
+    poi_type:            str
+    tip:                 str
+    arrival_time:        str
+    duration_min:        int
+    drive_from_prev_min: int
+
+
+class ItineraryDay(BaseModel):
+    date:      str
+    day_label: str
+    stops:     list[ItineraryStop]
+
+
+class ItineraryResponse(BaseModel):
+    title:          str
+    summary:        str
+    destination:    str
+    start_date:     str
+    end_date:       str
+    days:           list[ItineraryDay]
+    correlation_id: str
