@@ -294,7 +294,7 @@ Planning rules:
 - Cluster stops geographically to minimise travel
 - Hotel check-in is the first stop on Day 1 (arrival_time: "2:00 PM", poi_type: "accommodation")
 - Hotel check-out is the last stop on the final day (arrival_time: "11:00 AM")
-- Write tips that feel like insider knowledge, not a Wikipedia summary
+- Write tips that have insider knowledge, not a Wikipedia summary
 
 When ready, respond with ONLY a ```json code block with this structure:
 title, summary, getting_there(notes,drive_time_min,drive_distance_km,flights_url),
@@ -341,29 +341,19 @@ class _TC:
         self.function = fn
 
 
-async def _groq_call(client, system: str, messages: list, tools_active: bool = True) -> _Msg:
-    """Stream openai/gpt-oss-120b and accumulate chunks into a _Msg.
-
-    tools_active=True  → iteration 1, agent needs to call tools (send full TOOLS list)
-    tools_active=False → iteration 2+, agent only needs to output the plan JSON
-                         (drop tool definitions — saves ~450 tokens per call)
-    """
-    kwargs = dict(
+async def _groq_call(client, system: str, messages: list) -> _Msg:
+    """Stream openai/gpt-oss-120b and accumulate chunks into a _Msg."""
+    stream = await client.chat.completions.create(
         model="openai/gpt-oss-120b",
         messages=[{"role": "system", "content": system}] + messages,
+        tools=TOOLS,
+        tool_choice="auto",
         temperature=1,
         max_completion_tokens=4096,
         top_p=1,
         reasoning_effort="medium",
         stream=True,
     )
-    # Always send the tools list so the model has schema context.
-    # On iteration 1+ set tool_choice="none" to prevent calls — gpt-oss-120b
-    # ignores implicit none (when tools are omitted) but respects explicit none.
-    kwargs["tools"]       = TOOLS
-    kwargs["tool_choice"] = "auto" if tools_active else "none"
-
-    stream = await client.chat.completions.create(**kwargs)
 
     content: str = ""
     tc_map: dict = {}  # index → {id, name, arguments}
@@ -440,9 +430,7 @@ async def _run_agent(
     yield _sse({"type": "start", "message": f"Planning your trip to {destination}…"})
 
     for iteration in range(MAX_ITERATIONS):
-        # iteration 0: send tools so agent can fetch data
-        # iteration 1+: drop tools — agent only needs to output the plan JSON
-        msg = await _groq_call(groq_client, system, messages, tools_active=(iteration == 0))
+        msg = await _groq_call(groq_client, system, messages)
 
         # No tool calls → agent output the final plan
         if not msg.tool_calls:

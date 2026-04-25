@@ -10,61 +10,73 @@ logger = logging.getLogger("tourai.api")
 _PLACES_URL = "https://api.geoapify.com/v2/places"
 
 # Geoapify category → our poi_type label
-# Only confirmed-valid Geoapify categories listed here.
-# Historical sights (castles, ruins, monuments) are under tourism.sights.* — NOT historic.*
+# Derived from the confirmed supported category list from the Geoapify API.
 _CATEGORY_MAP = {
-    "tourism.sights":            "attraction",
-    "tourism.sights.castle":     "castle",
-    "tourism.sights.monument":   "monument",
-    "tourism.sights.memorial":   "memorial",
-    "tourism.sights.ruins":      "ruins",
-    "tourism.sights.archaeological_site": "archaeological_site",
-    "tourism.sights.viewpoint":  "viewpoint",
-    "tourism.sights.tower":      "tower",
-    "tourism.sights.fort":       "castle",
-    "tourism.attraction":        "attraction",
-    "entertainment.museum":      "museum",
-    "entertainment.art_gallery": "art_gallery",
-    "entertainment.cinema":      "cinema",
-    "entertainment.theme_park":  "theme_park",
-    "entertainment.aquarium":    "aquarium",
-    "entertainment.zoo":         "zoo",
-    "natural.park":              "park",
-    "natural.forest":            "park",
-    "natural.beach":             "beach",
-    "natural.peak":              "peak",
-    "catering.restaurant":       "restaurant",
-    "catering.cafe":             "cafe",
-    "catering.bar":              "bar",
-    "catering.pub":              "pub",
-    "catering.fast_food":        "fast_food",
-    "commercial.shopping_mall":  "mall",
-    "commercial.market":         "marketplace",
-    "sport.stadium":             "stadium",
-    "sport.sports_centre":       "sports_centre",
-    "sport.swimming_pool":       "swimming_pool",
-    "production.winery":         "winery",
-    "production.brewery":        "brewery",
+    "tourism.sights":                       "attraction",
+    "tourism.sights.castle":                "castle",
+    "tourism.sights.ruines":                "ruins",
+    "tourism.sights.fort":                  "castle",
+    "tourism.sights.archaeological_site":   "archaeological_site",
+    "tourism.sights.memorial":              "memorial",
+    "tourism.sights.tower":                 "tower",
+    "tourism.sights.bridge":                "attraction",
+    "tourism.sights.lighthouse":            "attraction",
+    "tourism.sights.place_of_worship":      "attraction",
+    "tourism.attraction":                   "attraction",
+    "tourism.attraction.viewpoint":         "viewpoint",
+    "tourism.attraction.artwork":           "artwork",
+    "entertainment.museum":                 "museum",
+    "entertainment.culture.gallery":        "art_gallery",
+    "entertainment.culture.theatre":        "theatre",
+    "entertainment.culture.arts_centre":    "culture",
+    "entertainment.culture":                "culture",
+    "entertainment.cinema":                 "cinema",
+    "entertainment.theme_park":             "theme_park",
+    "entertainment.aquarium":               "aquarium",
+    "entertainment.zoo":                    "zoo",
+    "leisure.park":                         "park",
+    "leisure.park.nature_reserve":          "nature_reserve",
+    "leisure.park.garden":                  "park",
+    "national_park":                        "park",
+    "natural.forest":                       "park",
+    "natural.mountain.peak":                "peak",
+    "beach":                                "beach",
+    "beach.beach_resort":                   "beach",
+    "catering.restaurant":                  "restaurant",
+    "catering.cafe":                        "cafe",
+    "catering.bar":                         "bar",
+    "catering.pub":                         "pub",
+    "catering.fast_food":                   "fast_food",
+    "sport.stadium":                        "stadium",
+    "sport.sports_centre":                  "sports_centre",
+    "sport.swimming_pool":                  "swimming_pool",
+    "production.winery":                    "winery",
+    "production.brewery":                   "brewery",
 }
 
-# Only confirmed-valid Geoapify category strings.
-# Any invalid entry makes the entire request return 400 — keep this list conservative.
+# Confirmed-valid Geoapify category strings (verified from API error response).
+# Any single invalid entry causes 400 for the entire request.
 _CATEGORIES = ",".join([
     "tourism.sights",
     "tourism.attraction",
     "entertainment.museum",
-    "entertainment.art_gallery",
+    "entertainment.culture.gallery",
+    "entertainment.culture.theatre",
     "entertainment.cinema",
     "entertainment.theme_park",
     "entertainment.aquarium",
     "entertainment.zoo",
-    "natural.park",
-    "natural.beach",
+    "leisure.park",
+    "leisure.park.nature_reserve",
+    "national_park",
+    "beach",
     "catering.restaurant",
     "catering.cafe",
     "catering.bar",
     "catering.pub",
     "sport.stadium",
+    "production.winery",
+    "production.brewery",
 ])
 
 
@@ -103,10 +115,11 @@ def _geoapify_to_poi(feature: dict[str, Any]) -> dict[str, Any] | None:
     # Expose the primary category under the OSM-style key that matches poi_type
     osm_key = (
         "tourism"  if poi_type in {"attraction", "museum", "art_gallery", "theme_park", "aquarium", "zoo",
-                                    "castle", "monument", "memorial", "ruins", "archaeological_site",
-                                    "viewpoint", "tower", "winery", "brewery"}
-        else "leisure"  if poi_type in {"park", "beach", "peak", "sports_centre", "swimming_pool", "stadium"}
-        else "amenity"  if poi_type in {"restaurant", "cafe", "bar", "pub", "fast_food", "cinema", "mall", "marketplace"}
+                                    "castle", "memorial", "ruins", "archaeological_site", "viewpoint",
+                                    "tower", "artwork", "culture", "theatre", "winery", "brewery"}
+        else "leisure"  if poi_type in {"park", "nature_reserve", "beach", "peak", "sports_centre",
+                                         "swimming_pool", "stadium"}
+        else "amenity"  if poi_type in {"restaurant", "cafe", "bar", "pub", "fast_food", "cinema"}
         else "leisure"
     )
     tags[osm_key] = poi_type
