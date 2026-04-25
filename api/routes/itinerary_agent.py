@@ -1,17 +1,15 @@
 """api/routes/itinerary_agent.py — Agentic trip planner with SSE streaming.
 
-Architecture (efficient version):
-  Phase 1 — Pre-fetch: all data-gathering runs in parallel (asyncio.gather).
-             Attractions, restaurants, hotels, and weather are fetched once
-             before the agent starts, so no tool calls are needed for them.
-  Phase 2 — Plan: agent receives all data in its initial context.
-             Only tool available is get_drive_time (requires agent-decided
-             coordinates). Agent outputs the plan as a JSON code block in
-             typically 1–2 Groq calls instead of 6–12.
+Architecture:
+  The agent decides which tools to call. Because gpt-oss-120b batches tool
+  calls in a single response, we execute every batch in parallel with
+  asyncio.gather — so the agent is both autonomous AND fast.
 
-Total API calls per plan:
-  Before: ~6–12 Groq + 5 Geoapify + 2 Open-Meteo (sequential, ~30–60 s)
-  After:  ~2 Groq + 4 Geoapify + 1 Open-Meteo (parallel pre-fetch, ~8–12 s)
+  Typical flow (2 Groq calls total):
+    Call 1 → agent batches: search_attractions + get_weather_forecast
+                            + search_restaurants + search_hotels
+             → server runs all 4 in parallel
+    Call 2 → agent has all data, outputs JSON plan
 """
 
 import asyncio
@@ -27,27 +25,119 @@ from fastapi import APIRouter, Header
 from fastapi.responses import StreamingResponse
 
 from api.config import settings
-from api.logging_setup import correlation_id
 from api.models import ItineraryRequest
 from utils.geoapify_places import _PLACES_URL
 
 router = APIRouter()
 logger = logging.getLogger("tourai.api")
 
-MAX_ITERATIONS = 6   # much lower now — agent only needs 1–2 calls to plan
+MAX_ITERATIONS = 8
 
-# ── Tool definitions — only get_drive_time remains ───────────────────────────
-# All fetching is done upfront in parallel; the agent only validates legs.
+# ── Tool definitions ──────────────────────────────────────────────────────────
 
 TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "search_attractions",
+            "description": (
+                "Search for tourist attractions, museums, parks, viewpoints, historic sites, "
+                "and cultural venues near the destination."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "lat":      {"type": "number"},
+                    "lon":      {"type": "number"},
+                    "radius_m": {"type": "integer", "default": 6000},
+                    "limit":    {"type": "integer", "default": 25},
+                },
+                "required": ["lat", "lon"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_restaurants",
+            "description": "Find restaurants, cafes, and bars near the destination for meal stops.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "lat":      {"type": "number"},
+                    "lon":      {"type": "number"},
+                    "radius_m": {"type": "integer", "default": 3000},
+                    "limit":    {"type": "integer", "default": 15},
+                },
+                "required": ["lat", "lon"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_hotels",
+            "description": "Find hotels and accommodation options near the destination.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "lat":      {"type": "number"},
+                    "lon":      {"type": "number"},
+                    "radius_m": {"type": "integer", "default": 4000},
+                },
+                "required": ["lat", "lon"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather_forecast",
+            "description": (
+                "Get the daily weather forecast for each day of the trip. "
+                "Use this to decide which days suit outdoor vs indoor activities."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "lat":   {"type": "number"},
+                    "lon":   {"type": "number"},
+                    "dates": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "ISO dates YYYY-MM-DD for each day",
+                    },
+                },
+                "required": ["lat", "lon", "dates"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_golden_hour",
+            "description": (
+                "Get golden hour and blue hour timing for a specific date. "
+                "Only call this when photography is in the traveller's interests."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "lat":  {"type": "number"},
+                    "lon":  {"type": "number"},
+                    "date": {"type": "string", "description": "ISO date YYYY-MM-DD"},
+                },
+                "required": ["lat", "lon", "date"],
+            },
+        },
+    },
     {
         "type": "function",
         "function": {
             "name": "get_drive_time",
             "description": (
                 "Get driving time in minutes between two coordinates. "
-                "Use this to validate that consecutive stops are reachable within "
-                "the traveller's drive tolerance, and to decide transit mode."
+                "Use to validate legs that may exceed the traveller's drive tolerance."
             ),
             "parameters": {
                 "type": "object",
@@ -64,99 +154,111 @@ TOOLS = [
 ]
 
 
-# ── Parallel pre-fetch helpers ────────────────────────────────────────────────
-
-async def _prefetch_attractions(lat: float, lon: float) -> list[dict]:
-    from utils.geoapify_places import fetch_pois
-    pois = await fetch_pois(lat, lon, 6000, settings.geoapify_api_key, limit=30)
-    return [
-        {"name": p["name"], "poi_type": p["poi_type"], "lat": p["lat"], "lon": p["lon"]}
-        for p in pois
-        if p["poi_type"] not in {"restaurant", "cafe", "bar", "pub", "fast_food"}
-    ][:25]
-
-
-async def _prefetch_restaurants(lat: float, lon: float) -> list[dict]:
-    FOOD_CATS = "catering.restaurant,catering.cafe,catering.bar,catering.pub,catering.fast_food"
-    try:
-        async with httpx.AsyncClient(timeout=12) as client:
-            resp = await client.get(
-                _PLACES_URL,
-                params={
-                    "categories": FOOD_CATS,
-                    "filter":     f"circle:{lon},{lat},3000",
-                    "limit":      15,
-                    "apiKey":     settings.geoapify_api_key,
-                },
-            )
-            resp.raise_for_status()
-        results = []
-        for f in resp.json().get("features", []):
-            p      = f.get("properties", {})
-            name   = p.get("name", "").strip()
-            coords = f.get("geometry", {}).get("coordinates", [])
-            if not name or len(coords) < 2:
-                continue
-            results.append({
-                "name":     name,
-                "poi_type": "restaurant",
-                "lat":      coords[1],
-                "lon":      coords[0],
-                "cuisine":  p.get("datasource", {}).get("raw", {}).get("cuisine", ""),
-            })
-        return results[:15]
-    except Exception as exc:
-        logger.warning("prefetch_restaurants_failed", extra={"error": str(exc)})
-        return []
-
-
-async def _prefetch_hotels(lat: float, lon: float) -> list[dict]:
-    HOTEL_CATS = "accommodation.hotel,accommodation.guest_house,accommodation.hostel,accommodation.motel"
-    try:
-        async with httpx.AsyncClient(timeout=12) as client:
-            resp = await client.get(
-                _PLACES_URL,
-                params={
-                    "categories": HOTEL_CATS,
-                    "filter":     f"circle:{lon},{lat},4000",
-                    "limit":      12,
-                    "apiKey":     settings.geoapify_api_key,
-                },
-            )
-            resp.raise_for_status()
-        results = []
-        for f in resp.json().get("features", []):
-            p      = f.get("properties", {})
-            name   = p.get("name", "").strip()
-            coords = f.get("geometry", {}).get("coordinates", [])
-            if not name:
-                continue
-            results.append({
-                "name":  name,
-                "lat":   coords[1] if len(coords) >= 2 else lat,
-                "lon":   coords[0] if len(coords) >= 2 else lon,
-                "stars": p.get("datasource", {}).get("raw", {}).get("stars", ""),
-            })
-        return results[:12]
-    except Exception as exc:
-        logger.warning("prefetch_hotels_failed", extra={"error": str(exc)})
-        return []
-
-
-# ── Tool executor (drive time only) ──────────────────────────────────────────
+# ── Tool executors ────────────────────────────────────────────────────────────
 
 async def _exec_tool(name: str, args: dict) -> str:
     try:
+        if name == "search_attractions":
+            from utils.geoapify_places import fetch_pois
+            pois = await fetch_pois(
+                args["lat"], args["lon"],
+                int(args.get("radius_m", 6000)),
+                settings.geoapify_api_key,
+                limit=int(args.get("limit", 25)),
+            )
+            filtered = [p for p in pois if p["poi_type"] not in
+                        {"restaurant", "cafe", "bar", "pub", "fast_food"}]
+            return json.dumps([
+                {"name": p["name"], "poi_type": p["poi_type"], "lat": p["lat"], "lon": p["lon"]}
+                for p in filtered[:25]
+            ])
+
+        if name == "search_restaurants":
+            FOOD_CATS = "catering.restaurant,catering.cafe,catering.bar,catering.pub,catering.fast_food"
+            async with httpx.AsyncClient(timeout=12) as client:
+                resp = await client.get(
+                    _PLACES_URL,
+                    params={
+                        "categories": FOOD_CATS,
+                        "filter":     f"circle:{args['lon']},{args['lat']},{args.get('radius_m', 3000)}",
+                        "limit":      args.get("limit", 15),
+                        "apiKey":     settings.geoapify_api_key,
+                    },
+                )
+                resp.raise_for_status()
+            results = []
+            for f in resp.json().get("features", []):
+                p      = f.get("properties", {})
+                name_  = p.get("name", "").strip()
+                coords = f.get("geometry", {}).get("coordinates", [])
+                if not name_ or len(coords) < 2:
+                    continue
+                results.append({
+                    "name":     name_,
+                    "poi_type": "restaurant",
+                    "lat":      coords[1],
+                    "lon":      coords[0],
+                    "cuisine":  p.get("datasource", {}).get("raw", {}).get("cuisine", ""),
+                })
+            return json.dumps(results[:15])
+
+        if name == "search_hotels":
+            HOTEL_CATS = "accommodation.hotel,accommodation.guest_house,accommodation.hostel,accommodation.motel"
+            async with httpx.AsyncClient(timeout=12) as client:
+                resp = await client.get(
+                    _PLACES_URL,
+                    params={
+                        "categories": HOTEL_CATS,
+                        "filter":     f"circle:{args['lon']},{args['lat']},{args.get('radius_m', 4000)}",
+                        "limit":      12,
+                        "apiKey":     settings.geoapify_api_key,
+                    },
+                )
+                resp.raise_for_status()
+            results = []
+            for f in resp.json().get("features", []):
+                p      = f.get("properties", {})
+                name_  = p.get("name", "").strip()
+                coords = f.get("geometry", {}).get("coordinates", [])
+                if not name_:
+                    continue
+                results.append({
+                    "name":  name_,
+                    "lat":   coords[1] if len(coords) >= 2 else args["lat"],
+                    "lon":   coords[0] if len(coords) >= 2 else args["lon"],
+                    "stars": p.get("datasource", {}).get("raw", {}).get("stars", ""),
+                })
+            return json.dumps(results[:12])
+
+        if name == "get_weather_forecast":
+            from utils.weather import get_forecast
+            return json.dumps(await get_forecast(args["lat"], args["lon"], args["dates"]))
+
+        if name == "get_golden_hour":
+            from utils.weather import get_forecast
+            from utils.golden_hour import get_light_windows
+            forecast = await get_forecast(args["lat"], args["lon"], [args["date"]])
+            if not forecast:
+                return json.dumps({"error": "date out of forecast range"})
+            f = forecast[0]
+            return json.dumps({
+                "date":    args["date"],
+                "sunrise": f["sunrise_iso"],
+                "sunset":  f["sunset_iso"],
+                "windows": get_light_windows(f["sunrise_iso"], f["sunset_iso"]),
+            })
+
         if name == "get_drive_time":
             from utils.osrm import get_drive_time
-            result = await get_drive_time(
+            return json.dumps(await get_drive_time(
                 args["from_lat"], args["from_lon"],
                 args["to_lat"],  args["to_lon"],
-            )
-            return json.dumps(result)
+            ))
+
     except Exception as exc:
         logger.warning("tool_exec_error", extra={"tool": name, "error": str(exc)})
         return json.dumps({"error": str(exc)})
+
     return json.dumps({"error": f"unknown tool: {name}"})
 
 
@@ -164,6 +266,7 @@ async def _exec_tool(name: str, args: dict) -> str:
 
 def _build_system_prompt(interests: list[str], pace: str, style: str, drive_tol_hrs: float) -> str:
     stops_per_day = {"relaxed": "2–3", "balanced": "3–4", "packed": "4–5"}.get(pace, "3–4")
+    photo = "photography" in (interests or [])
     return f"""You are TourAI, an expert AI travel agent. Build a complete, personalised trip plan — accommodation, getting there, meals, transit between every stop, and a realistic budget.
 
 Traveller profile:
@@ -172,10 +275,17 @@ Traveller profile:
   Travelling as: {style}
   Max drive between stops: {drive_tol_hrs} hours
 
-All attraction, restaurant, hotel, and weather data has already been fetched and is included in the user message. Use it directly — do NOT call any search tools.
+IMPORTANT — tool calling strategy:
+  In your FIRST response, call ALL of these tools simultaneously in one message:
+    • search_attractions (tailor to interests)
+    • get_weather_forecast (all trip dates)
+    • search_restaurants
+    • search_hotels
+    {"• get_golden_hour for each day (photography interest detected)" if photo else ""}
+  Do NOT call them one at a time. Return all tool calls together so they run in parallel.
 
-You have ONE tool available: get_drive_time(from_lat, from_lon, to_lat, to_lon).
-Use it sparingly — only to validate legs that look longer than {drive_tol_hrs} hours.
+  After receiving results, optionally call get_drive_time to validate long legs.
+  Then output the complete plan as a JSON code block.
 
 Planning rules:
 - Every day must include breakfast, lunch, and dinner stops (is_meal: true)
@@ -185,9 +295,8 @@ Planning rules:
 - Hotel check-in is the first stop on Day 1 (arrival_time: "2:00 PM", poi_type: "accommodation")
 - Hotel check-out is the last stop on the final day (arrival_time: "11:00 AM")
 - Write tips that feel like insider knowledge, not a Wikipedia summary
-- Pick real places from the provided lists; invent names only if the lists are empty
 
-When ready, respond with ONLY a JSON code block:
+Output format — respond with ONLY a JSON code block when ready:
 
 ```json
 {{
@@ -243,30 +352,38 @@ def _sse(payload: dict) -> str:
     return f"data: {json.dumps(payload)}\n\n"
 
 
+_TOOL_LABELS = {
+    "search_attractions":   "Exploring attractions",
+    "search_restaurants":   "Finding places to eat",
+    "search_hotels":        "Searching for accommodation",
+    "get_weather_forecast": "Checking the weather forecast",
+    "get_golden_hour":      "Calculating golden hour",
+    "get_drive_time":       "Checking drive times",
+}
+
+
 # ── Groq streaming helper ─────────────────────────────────────────────────────
 
 class _Msg:
-    """Reconstructed message from a streamed Groq response."""
     def __init__(self, content: str, tool_calls: list | None):
         self.content    = content
         self.tool_calls = tool_calls
 
 
 class _TC:
-    """Reconstructed tool call."""
     def __init__(self, id: str, name: str, arguments: str):
-        self.id       = id
+        self.id = id
 
         class _Fn:
             pass
-        fn            = _Fn()
-        fn.name       = name
-        fn.arguments  = arguments
+        fn           = _Fn()
+        fn.name      = name
+        fn.arguments = arguments
         self.function = fn
 
 
 async def _groq_call(client, system: str, messages: list) -> _Msg:
-    """Call openai/gpt-oss-120b with stream=True and collect into a _Msg."""
+    """Stream openai/gpt-oss-120b and accumulate chunks into a _Msg."""
     stream = await client.chat.completions.create(
         model="openai/gpt-oss-120b",
         messages=[{"role": "system", "content": system}] + messages,
@@ -279,8 +396,8 @@ async def _groq_call(client, system: str, messages: list) -> _Msg:
         stream=True,
     )
 
-    content: str        = ""
-    tc_map: dict        = {}   # index → {id, name, arguments}
+    content: str = ""
+    tc_map: dict = {}  # index → {id, name, arguments}
 
     async for chunk in stream:
         choice = chunk.choices[0] if chunk.choices else None
@@ -324,16 +441,9 @@ async def _run_agent(
     pace: str,
     drive_tol: float,
 ):
-    """Async generator yielding SSE strings.
-
-    Pre-fetches all data in parallel, then runs the agent with a rich context.
-    The agent only needs to call get_drive_time (optional) then output the plan.
-    """
     from groq import AsyncGroq
-    from utils.weather import get_forecast
-    from utils.golden_hour import get_light_windows
 
-    groq_client = AsyncGroq(api_key=settings.groq_api_key)   # AsyncGroq for streaming
+    groq_client = AsyncGroq(api_key=settings.groq_api_key)
     system      = _build_system_prompt(interests, pace, style, drive_tol)
 
     d0    = date.fromisoformat(start_date)
@@ -346,78 +456,24 @@ async def _run_agent(
         f"&checkin={start_date}&checkout={end_date}"
     )
 
-    yield _sse({"type": "start", "message": f"Planning your trip to {destination}…"})
-
-    # ── Phase 1: parallel pre-fetch ───────────────────────────────────────────
-    yield _sse({"type": "step", "tool": "search_attractions", "message": "Gathering local information…"})
-
-    attractions, restaurants, hotels, weather = await asyncio.gather(
-        _prefetch_attractions(lat, lon),
-        _prefetch_restaurants(lat, lon),
-        _prefetch_hotels(lat, lon),
-        get_forecast(lat, lon, dates),
-        return_exceptions=True,
+    user_msg = (
+        f"Plan a trip to {destination}.\n"
+        f"Dates: {start_date} to {end_date} ({len(dates)} day{'s' if len(dates) > 1 else ''})\n"
+        f"Destination coordinates: lat={lat}, lon={lon}\n"
+        f"Trip dates list: {dates}\n"
+        f"Interests: {', '.join(interests) if interests else 'general sightseeing'}\n"
+        f"Flights URL: {flights_url}\n"
+        f"Booking URL: {booking_url}"
     )
 
-    # Normalise exceptions → empty lists
-    if isinstance(attractions, Exception):
-        logger.warning("prefetch_attractions_exc", extra={"error": str(attractions)})
-        attractions = []
-    if isinstance(restaurants, Exception):
-        logger.warning("prefetch_restaurants_exc", extra={"error": str(restaurants)})
-        restaurants = []
-    if isinstance(hotels, Exception):
-        logger.warning("prefetch_hotels_exc", extra={"error": str(hotels)})
-        hotels = []
-    if isinstance(weather, Exception):
-        logger.warning("prefetch_weather_exc", extra={"error": str(weather)})
-        weather = []
+    messages = [{"role": "user", "content": user_msg}]
 
-    yield _sse({"type": "result", "tool": "search_attractions",
-                "message": f"Found {len(attractions)} attractions, {len(restaurants)} restaurants, {len(hotels)} hotels"})
-    yield _sse({"type": "result", "tool": "get_weather_forecast",
-                "message": f"Weather ready for {len(weather)} days"})
+    yield _sse({"type": "start", "message": f"Planning your trip to {destination}…"})
 
-    # Compute golden hour inline from weather data (no extra API call)
-    golden_hours = {}
-    if "photography" in (interests or []) or "nature" in (interests or []):
-        for w in weather:
-            if w.get("sunrise_iso") and w.get("sunset_iso"):
-                golden_hours[w["date"]] = get_light_windows(w["sunrise_iso"], w["sunset_iso"])
-
-    # ── Phase 2: build rich context message ───────────────────────────────────
-    yield _sse({"type": "step", "tool": "get_drive_time", "message": "Building your personalised itinerary…"})
-
-    context_parts = [
-        f"Plan a trip to {destination}.",
-        f"Dates: {start_date} to {end_date} ({len(dates)} day{'s' if len(dates) > 1 else ''})",
-        f"Destination coordinates: lat={lat}, lon={lon}",
-        f"Flights search URL: {flights_url}",
-        f"Hotel booking URL: {booking_url}",
-        "",
-        f"ATTRACTIONS ({len(attractions)} found):",
-        json.dumps(attractions, separators=(",", ":")),
-        "",
-        f"RESTAURANTS ({len(restaurants)} found):",
-        json.dumps(restaurants, separators=(",", ":")),
-        "",
-        f"HOTELS ({len(hotels)} found):",
-        json.dumps(hotels, separators=(",", ":")),
-        "",
-        f"WEATHER FORECAST ({len(weather)} days):",
-        json.dumps(weather, separators=(",", ":")),
-    ]
-    if golden_hours:
-        context_parts += ["", "GOLDEN HOUR WINDOWS:", json.dumps(golden_hours, separators=(",", ":"))]
-
-    user_msg  = "\n".join(context_parts)
-    messages  = [{"role": "user", "content": user_msg}]
-
-    # ── Phase 3: agent planning loop (1–2 iterations expected) ───────────────
     for iteration in range(MAX_ITERATIONS):
         msg = await _groq_call(groq_client, system, messages)
 
-        # No tool calls → agent has output the final plan
+        # No tool calls → agent output the final plan
         if not msg.tool_calls:
             content = msg.content or ""
             yield _sse({"type": "step", "tool": "finalize_plan", "message": "Putting it all together…"})
@@ -435,7 +491,6 @@ async def _run_agent(
                     return
                 except json.JSONDecodeError:
                     pass
-            # Fallback: try parsing raw content as JSON
             try:
                 plan = json.loads(content)
                 plan.setdefault("getting_there", {}).setdefault("flights_url", flights_url)
@@ -451,27 +506,44 @@ async def _run_agent(
             yield _sse({"type": "error", "message": "Agent stopped without finalising the plan."})
             return
 
-        # Process tool calls (only get_drive_time expected)
-        tool_results = []
+        # ── Execute ALL tool calls in parallel ────────────────────────────────
+        # Emit progress for each tool the agent requested
+        tool_names = [tc.function.name for tc in msg.tool_calls]
+        for tool_name in tool_names:
+            label = _TOOL_LABELS.get(tool_name, tool_name.replace("_", " ").title())
+            yield _sse({"type": "step", "tool": tool_name, "message": f"{label}…"})
+
+        # Parse all args first
+        parsed_calls = []
         for tc in msg.tool_calls:
-            tool_name = tc.function.name
             try:
-                tool_args = json.loads(tc.function.arguments)
+                args = json.loads(tc.function.arguments)
             except Exception:
-                tool_args = {}
+                args = {}
+            parsed_calls.append((tc, args))
 
-            if tool_name == "get_drive_time":
-                yield _sse({"type": "step", "tool": "get_drive_time", "message": "Checking drive time between stops…"})
+        # Run all tool calls in parallel
+        results = await asyncio.gather(
+            *[_exec_tool(tc.function.name, args) for tc, args in parsed_calls],
+            return_exceptions=True,
+        )
 
-            result = await _exec_tool(tool_name, tool_args)
+        tool_results = []
+        for (tc, _), result in zip(parsed_calls, results):
+            if isinstance(result, Exception):
+                result = json.dumps({"error": str(result)})
 
+            # Emit a summary for each completed tool
             try:
                 parsed = json.loads(result)
-                if isinstance(parsed, dict) and "duration_min" in parsed:
-                    mins = parsed.get("duration_min")
-                    km   = parsed.get("distance_km")
-                    yield _sse({"type": "result", "tool": tool_name,
-                                "message": f"{mins} min drive · {km} km"})
+                if isinstance(parsed, list):
+                    yield _sse({"type": "result", "tool": tc.function.name,
+                                "message": f"Found {len(parsed)} results"})
+                elif isinstance(parsed, dict) and "duration_min" in parsed:
+                    yield _sse({"type": "result", "tool": tc.function.name,
+                                "message": f"{parsed.get('duration_min')} min · {parsed.get('distance_km')} km"})
+                elif isinstance(parsed, dict) and "error" not in parsed:
+                    yield _sse({"type": "result", "tool": tc.function.name, "message": "Done"})
             except Exception:
                 pass
 
@@ -481,14 +553,14 @@ async def _run_agent(
                 "content":      result,
             })
 
-        # Reconstruct tool_calls in OpenAI wire format for the next message
+        # Append assistant turn + all tool results before next iteration
         raw_tool_calls = [
             {
                 "id":       tc.id,
                 "type":     "function",
                 "function": {"name": tc.function.name, "arguments": tc.function.arguments},
             }
-            for tc in (msg.tool_calls or [])
+            for tc, _ in parsed_calls
         ]
         messages.append({"role": "assistant", "content": msg.content or "", "tool_calls": raw_tool_calls})
         messages.extend(tool_results)
@@ -513,8 +585,8 @@ async def stream_itinerary(
     if authorization and authorization.startswith("Bearer "):
         try:
             from api.supabase_client import get_supabase
-            token  = authorization.removeprefix("Bearer ").strip()
-            user   = get_supabase().auth.get_user(token).user
+            token = authorization.removeprefix("Bearer ").strip()
+            user  = get_supabase().auth.get_user(token).user
             if user:
                 result = (
                     get_supabase()
