@@ -357,9 +357,11 @@ async def _groq_call(client, system: str, messages: list, tools_active: bool = T
         reasoning_effort="medium",
         stream=True,
     )
-    if tools_active:
-        kwargs["tools"]       = TOOLS
-        kwargs["tool_choice"] = "auto"
+    # Always send the tools list so the model has schema context.
+    # On iteration 1+ set tool_choice="none" to prevent calls — gpt-oss-120b
+    # ignores implicit none (when tools are omitted) but respects explicit none.
+    kwargs["tools"]       = TOOLS
+    kwargs["tool_choice"] = "auto" if tools_active else "none"
 
     stream = await client.chat.completions.create(**kwargs)
 

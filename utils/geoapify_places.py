@@ -143,6 +143,9 @@ async def fetch_pois(
                     "apiKey":     api_key,
                 },
             )
+            if resp.status_code == 400:
+                logger.error("geoapify_400", extra={"body": resp.text, "categories": _CATEGORIES})
+                return []
             resp.raise_for_status()
             features = resp.json().get("features", [])
             pois = [p for f in features if (p := _geoapify_to_poi(f)) is not None]
