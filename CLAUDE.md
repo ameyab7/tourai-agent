@@ -110,6 +110,15 @@ The main free-tier entry point. Replaces the current "drop straight into map" UX
 **Status: ✅ COMPLETE (mock RevenueCat — swap key when ready)**
 **Effort: ~3 days (after Phase 3)**
 
+> ⚠️ **Pre-production checklist — do this before App Store submission:**
+> 1. Create RevenueCat account at revenuecat.com, add iOS app (`com.tourai.app`)
+> 2. Define products in App Store Connect: `tourai_monthly` ($7.99) and `tourai_annual` ($59.99)
+> 3. In `mobile/lib/purchases.js`: set `MOCK_MODE = false` and replace `REVENUECAT_API_KEY`
+> 4. Run `npm install react-native-purchases` + `npx expo prebuild` to link native module
+> 5. In `mobile/lib/purchases.js`: revert `active = true` back to `active = val === 'true'`
+> 6. Add Apple Sign In (required by App Store if offering other social login — see Known Issues #2)
+> 7. Test full purchase flow on a physical device (simulator cannot process payments)
+
 - [ ] Add RevenueCat SDK to mobile for subscription management (iOS + Android in-app purchase)
 - [ ] Define products: Monthly $7.99 / Annual $59.99
 - [ ] Paywall screen: feature comparison, "Start Free Trial" CTA

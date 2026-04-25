@@ -26,8 +26,10 @@ const Mock = {
   },
 
   async getCustomerInfo() {
+    // Temporarily returning premium=true so the gate doesn't block during dev.
+    // Change `active` back to `val === 'true'` when ready to test the paywall.
     const val = await AsyncStorage.getItem(MOCK_PREMIUM_KEY);
-    const active = val === 'true';
+    const active = true; // val === 'true'
     return {
       entitlements: {
         active: active ? { premium: { isActive: true } } : {},
