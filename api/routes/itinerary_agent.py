@@ -296,54 +296,13 @@ Planning rules:
 - Hotel check-out is the last stop on the final day (arrival_time: "11:00 AM")
 - Write tips that feel like insider knowledge, not a Wikipedia summary
 
-Output format — respond with ONLY a JSON code block when ready:
-
-```json
-{{
-  "title": "Trip title",
-  "summary": "2-sentence summary",
-  "getting_there": {{
-    "notes": "How to get there",
-    "drive_time_min": 0,
-    "drive_distance_km": 0.0,
-    "flights_url": "..."
-  }},
-  "accommodation": {{
-    "recommended_area": "Area name",
-    "area_reason": "Why this area",
-    "booking_url": "...",
-    "options": [{{"name": "Hotel", "tier": "mid-range", "est_price_usd_per_night": 150}}]
-  }},
-  "budget": {{
-    "accommodation_usd": 300,
-    "food_usd": 150,
-    "activities_usd": 100,
-    "transport_usd": 80,
-    "total_usd": 630,
-    "notes": "Budget notes"
-  }},
-  "days": [
-    {{
-      "date": "YYYY-MM-DD",
-      "day_label": "Day 1 — Arrival",
-      "weather": {{"description": "Sunny", "temp_high_c": 28, "temp_low_c": 18, "is_clear": true}},
-      "stops": [
-        {{
-          "name": "Stop name",
-          "poi_type": "attraction",
-          "tip": "Insider tip",
-          "arrival_time": "10:00 AM",
-          "duration_min": 90,
-          "is_meal": false,
-          "lat": 0.0,
-          "lon": 0.0,
-          "transit_from_prev": {{"mode": "walk", "duration_min": 10, "notes": "Short walk"}}
-        }}
-      ]
-    }}
-  ]
-}}
-```"""
+When ready, respond with ONLY a ```json code block with this structure:
+title, summary, getting_there(notes,drive_time_min,drive_distance_km,flights_url),
+accommodation(recommended_area,area_reason,booking_url,options:[name,tier,est_price_usd_per_night]),
+budget(accommodation_usd,food_usd,activities_usd,transport_usd,total_usd,notes),
+days:[date,day_label,weather(description,temp_high_c,temp_low_c,is_clear),
+stops:[name,poi_type,tip,arrival_time,duration_min,is_meal,lat,lon,
+transit_from_prev(mode,duration_min,notes)]]"""
 
 
 # ── SSE helper ────────────────────────────────────────────────────────────────

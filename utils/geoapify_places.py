@@ -60,15 +60,11 @@ _CATEGORIES = ",".join([
     "entertainment.zoo",
     "natural.park",
     "natural.beach",
-    "natural.peak",
     "catering.restaurant",
     "catering.cafe",
     "catering.bar",
     "catering.pub",
-    "commercial.market",
     "sport.stadium",
-    "production.winery",
-    "production.brewery",
 ])
 
 
