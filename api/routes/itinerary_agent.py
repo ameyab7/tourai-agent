@@ -50,7 +50,7 @@ TOOLS = [
                     "lat":      {"type": "number"},
                     "lon":      {"type": "number"},
                     "radius_m": {"type": "integer", "default": 6000},
-                    "limit":    {"type": "integer", "default": 25},
+                    "limit":    {"type": "integer", "default": 15},
                 },
                 "required": ["lat", "lon"],
             },
@@ -67,7 +67,7 @@ TOOLS = [
                     "lat":      {"type": "number"},
                     "lon":      {"type": "number"},
                     "radius_m": {"type": "integer", "default": 3000},
-                    "limit":    {"type": "integer", "default": 15},
+                    "limit":    {"type": "integer", "default": 10},
                 },
                 "required": ["lat", "lon"],
             },
@@ -170,7 +170,7 @@ async def _exec_tool(name: str, args: dict) -> str:
                         {"restaurant", "cafe", "bar", "pub", "fast_food"}]
             return json.dumps([
                 {"name": p["name"], "poi_type": p["poi_type"], "lat": p["lat"], "lon": p["lon"]}
-                for p in filtered[:25]
+                for p in filtered[:15]
             ])
 
         if name == "search_restaurants":
@@ -200,7 +200,7 @@ async def _exec_tool(name: str, args: dict) -> str:
                     "lon":      coords[0],
                     "cuisine":  p.get("datasource", {}).get("raw", {}).get("cuisine", ""),
                 })
-            return json.dumps(results[:15])
+            return json.dumps(results[:10])
 
         if name == "search_hotels":
             HOTEL_CATS = "accommodation.hotel,accommodation.guest_house,accommodation.hostel,accommodation.motel"
@@ -210,7 +210,7 @@ async def _exec_tool(name: str, args: dict) -> str:
                     params={
                         "categories": HOTEL_CATS,
                         "filter":     f"circle:{args['lon']},{args['lat']},{args.get('radius_m', 4000)}",
-                        "limit":      12,
+                        "limit":      8,
                         "apiKey":     settings.geoapify_api_key,
                     },
                 )
@@ -228,7 +228,7 @@ async def _exec_tool(name: str, args: dict) -> str:
                     "lon":   coords[0] if len(coords) >= 2 else args["lon"],
                     "stars": p.get("datasource", {}).get("raw", {}).get("stars", ""),
                 })
-            return json.dumps(results[:12])
+            return json.dumps(results[:8])
 
         if name == "get_weather_forecast":
             from utils.weather import get_forecast
@@ -342,16 +342,14 @@ class _TC:
 
 
 async def _groq_call(client, system: str, messages: list) -> _Msg:
-    """Stream openai/gpt-oss-120b and accumulate chunks into a _Msg."""
+    """Call llama-3.3-70b-versatile with streaming and accumulate into a _Msg."""
     stream = await client.chat.completions.create(
-        model="openai/gpt-oss-120b",
+        model="llama-3.3-70b-versatile",
         messages=[{"role": "system", "content": system}] + messages,
         tools=TOOLS,
         tool_choice="auto",
-        temperature=1,
-        max_completion_tokens=8192,
-        top_p=1,
-        reasoning_effort="medium",
+        temperature=0.3,
+        max_tokens=4000,
         stream=True,
     )
 
