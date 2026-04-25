@@ -213,22 +213,42 @@ async def get_recommendations(
     user=Depends(get_current_user),
 ) -> RecommendationsResponse:
 
-    sb = get_supabase()
+    def _load_profile() -> dict:
+        # Synchronous Supabase call — run in a thread so it doesn't block the event loop
+        try:
+            result = (
+                get_supabase()
+                .table("profiles")
+                .select("interests,travel_style,pace")
+                .eq("user_id", str(user.id))
+                .execute()
+            )
+            return result.data[0] if result.data else {}
+        except Exception as exc:
+            logger.warning("profile_load_failed", extra={"error": str(exc)})
+            return {}
 
-    async def _profile():
-        result = (
-            sb.table("profiles")
-            .select("interests,travel_style,pace")
-            .eq("user_id", str(user.id))
-            .execute()
+    try:
+        profile_data, weather, raw_pois = await asyncio.gather(
+            asyncio.to_thread(_load_profile),
+            get_conditions(body.lat, body.lon),
+            _fetch_pois(body.lat, body.lon, int(body.radius_km * 1000)),
+            return_exceptions=True,
         )
-        return result.data[0] if result.data else {}
+    except Exception as exc:
+        logger.error("recommendations_gather_failed", extra={"error": str(exc)})
+        raise HTTPException(status_code=500, detail="Failed to fetch recommendations data")
 
-    profile_data, weather, raw_pois = await asyncio.gather(
-        _profile(),
-        get_conditions(body.lat, body.lon),
-        _fetch_pois(body.lat, body.lon, int(body.radius_km * 1000)),
-    )
+    # Normalise any exceptions from gather into safe defaults
+    if isinstance(profile_data, Exception):
+        logger.warning("profile_gather_exc", extra={"error": str(profile_data)})
+        profile_data = {}
+    if isinstance(weather, Exception):
+        logger.warning("weather_gather_exc", extra={"error": str(weather)})
+        raise HTTPException(status_code=503, detail="Weather service unavailable")
+    if isinstance(raw_pois, Exception):
+        logger.warning("pois_gather_exc", extra={"error": str(raw_pois)})
+        raw_pois = []
 
     # Gracefully return empty cards when all Overpass mirrors fail
     if not raw_pois:
