@@ -46,7 +46,7 @@ _CATEGORY_MAP = {
     "sport.swimming_pool":        "swimming_pool",
 }
 
-# Categories sent to Geoapify
+# Categories sent to Geoapify — must be valid subcategories (no bare top-level like "historic")
 _CATEGORIES = ",".join([
     "tourism.sights",
     "tourism.attraction",
@@ -66,7 +66,11 @@ _CATEGORIES = ",".join([
     "catering.cafe",
     "catering.bar",
     "catering.pub",
-    "historic",
+    "historic.monument",
+    "historic.memorial",
+    "historic.castle",
+    "historic.ruins",
+    "historic.archaeological_site",
     "commercial.market",
     "sport.stadium",
 ])

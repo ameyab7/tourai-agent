@@ -8,6 +8,7 @@ the user sees live progress ("Checking weather…", "Finding hotels…", etc.)
 import asyncio
 import json
 import logging
+import re
 import traceback
 from datetime import date, timedelta
 from urllib.parse import quote_plus
@@ -153,109 +154,6 @@ TOOLS = [
             },
         },
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "finalize_plan",
-            "description": (
-                "Submit the complete, finalized trip plan. Call this once you have "
-                "gathered enough information to build a high-quality itinerary. "
-                "Include accommodation options, a budget estimate, and transit notes "
-                "between every stop."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "title":   {"type": "string"},
-                    "summary": {"type": "string", "description": "2-sentence trip summary"},
-                    "getting_there": {
-                        "type": "object",
-                        "properties": {
-                            "notes":            {"type": "string"},
-                            "drive_time_min":   {"type": "integer"},
-                            "drive_distance_km":{"type": "number"},
-                            "flights_url":      {"type": "string"},
-                        },
-                    },
-                    "accommodation": {
-                        "type": "object",
-                        "properties": {
-                            "recommended_area": {"type": "string"},
-                            "area_reason":      {"type": "string"},
-                            "booking_url":      {"type": "string"},
-                            "options": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "name":                    {"type": "string"},
-                                        "tier":                    {"type": "string"},
-                                        "est_price_usd_per_night": {"type": "integer"},
-                                    },
-                                },
-                            },
-                        },
-                    },
-                    "budget": {
-                        "type": "object",
-                        "properties": {
-                            "accommodation_usd": {"type": "integer"},
-                            "food_usd":          {"type": "integer"},
-                            "activities_usd":    {"type": "integer"},
-                            "transport_usd":     {"type": "integer"},
-                            "total_usd":         {"type": "integer"},
-                            "notes":             {"type": "string"},
-                        },
-                    },
-                    "days": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "date":      {"type": "string"},
-                                "day_label": {"type": "string"},
-                                "weather": {
-                                    "type": "object",
-                                    "properties": {
-                                        "description":  {"type": "string"},
-                                        "temp_high_c":  {"type": "number"},
-                                        "temp_low_c":   {"type": "number"},
-                                        "is_clear":     {"type": "boolean"},
-                                    },
-                                },
-                                "stops": {
-                                    "type": "array",
-                                    "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "name":         {"type": "string"},
-                                            "poi_type":     {"type": "string"},
-                                            "tip":          {"type": "string"},
-                                            "arrival_time": {"type": "string"},
-                                            "duration_min": {"type": "integer"},
-                                            "is_meal":      {"type": "boolean"},
-                                            "lat":          {"type": "number"},
-                                            "lon":          {"type": "number"},
-                                            "transit_from_prev": {
-                                                "type": "object",
-                                                "properties": {
-                                                    "mode":         {"type": "string", "description": "walk | uber | drive | metro | arrive"},
-                                                    "duration_min": {"type": "integer"},
-                                                    "notes":        {"type": "string"},
-                                                },
-                                            },
-                                        },
-                                        "required": ["name", "arrival_time", "transit_from_prev"],
-                                    },
-                                },
-                            },
-                        },
-                    },
-                },
-                "required": ["title", "summary", "days"],
-            },
-        },
-    },
 ]
 
 # ── Tool executor ─────────────────────────────────────────────────────────────
@@ -376,10 +274,6 @@ async def _exec_tool(name: str, args: dict) -> str:
             )
             return json.dumps(result)
 
-        if name == "finalize_plan":
-            # Caller handles this specially — just echo back
-            return json.dumps({"status": "accepted"})
-
     except Exception as exc:
         logger.warning("tool_exec_error", extra={"tool": name, "error": str(exc)})
         return json.dumps({"error": str(exc)})
@@ -402,25 +296,71 @@ Traveller profile:
 How to use your tools:
 1. Call search_attractions to find things to do (tailor categories to interests)
 2. Call get_weather_forecast to see which days suit outdoor vs indoor activities
-3. If photography is an interest, call get_golden_hour for each day — schedule scenic spots at those times
-4. Call search_restaurants to find meal spots (include breakfast, lunch, dinner)
+3. If photography is an interest, call get_golden_hour for each day
+4. Call search_restaurants to find meal spots (breakfast, lunch, dinner)
 5. Call search_hotels to find accommodation
-6. Call get_drive_time to validate legs that look long — reorder stops if needed
-7. Once you have enough, call finalize_plan
+6. Call get_drive_time to validate legs that look long
+7. Once you have enough data, output the complete plan as a JSON code block (see format below)
 
 Rules for the itinerary:
 - Every day must include breakfast, lunch, and dinner stops (is_meal: true)
-- Schedule outdoor/photography spots on clear days, museums/galleries on rainy days
-- transit_from_prev.mode: "arrive" for first stop, "walk" if ≤ 15 min, "uber" if 15–30 min, "drive" if > 30 min
+- Schedule outdoor spots on clear days, museums/galleries on rainy days
+- transit_from_prev.mode: "arrive" for first stop, "walk" ≤15 min, "uber" 15–30 min, "drive" >30 min
 - Cluster stops geographically to minimise travel
 - Hotel check-in is the first stop on Day 1 (arrival_time: "2:00 PM", poi_type: "accommodation")
 - Hotel check-out is the last stop on the final day (arrival_time: "11:00 AM")
-- accommodation.booking_url: Booking.com search link for the destination + dates
-- getting_there.flights_url: Google Flights search link
-- Budget: realistic estimate in USD, include a helpful "notes" string
 - Write tips that feel like insider knowledge, not a Wikipedia summary
 
-Output a complete, high-quality plan. The traveller should be able to follow it without opening another app."""
+FINAL OUTPUT FORMAT — when you have gathered enough information, stop calling tools and respond with ONLY a JSON code block in this exact structure:
+
+```json
+{{
+  "title": "Trip title",
+  "summary": "2-sentence trip summary",
+  "getting_there": {{
+    "notes": "How to get there",
+    "drive_time_min": 120,
+    "drive_distance_km": 95.0,
+    "flights_url": "..."
+  }},
+  "accommodation": {{
+    "recommended_area": "Area name",
+    "area_reason": "Why this area",
+    "booking_url": "...",
+    "options": [
+      {{"name": "Hotel Name", "tier": "mid-range", "est_price_usd_per_night": 150}}
+    ]
+  }},
+  "budget": {{
+    "accommodation_usd": 300,
+    "food_usd": 150,
+    "activities_usd": 100,
+    "transport_usd": 80,
+    "total_usd": 630,
+    "notes": "Budget notes"
+  }},
+  "days": [
+    {{
+      "date": "YYYY-MM-DD",
+      "day_label": "Day 1 — Arrival",
+      "weather": {{"description": "Sunny", "temp_high_c": 28, "temp_low_c": 18, "is_clear": true}},
+      "stops": [
+        {{
+          "name": "Stop name",
+          "poi_type": "attraction",
+          "tip": "Insider tip",
+          "arrival_time": "10:00 AM",
+          "duration_min": 90,
+          "is_meal": false,
+          "lat": 0.0,
+          "lon": 0.0,
+          "transit_from_prev": {{"mode": "walk", "duration_min": 10, "notes": "5 min walk south"}}
+        }}
+      ]
+    }}
+  ]
+}}
+```"""
 
 
 # ── SSE helpers ───────────────────────────────────────────────────────────────
@@ -436,7 +376,6 @@ _TOOL_LABELS = {
     "get_weather_forecast": "Checking the weather forecast",
     "get_golden_hour":      "Calculating golden hour",
     "get_drive_time":       "Checking drive times",
-    "finalize_plan":        "Building your complete plan",
 }
 
 
@@ -480,7 +419,7 @@ async def _run_agent(
         f"Interests: {', '.join(interests) if interests else 'general sightseeing'}\n"
         f"Flights search: {flights_url}\n"
         f"Hotel booking search: {booking_url}\n"
-        f"Use these URLs in finalize_plan."
+        f"Use these URLs in the final JSON plan."
     )
 
     messages = [{"role": "user", "content": user_msg}]
@@ -493,14 +432,41 @@ async def _run_agent(
             messages=[{"role": "system", "content": system}] + messages,
             tools=TOOLS,
             tool_choice="auto",
-            max_tokens=2000,
+            max_tokens=4000,
             temperature=0.3,
         )
 
         msg = resp.choices[0].message
 
-        # No tool calls → agent is done (shouldn't happen before finalize, but handle it)
+        # No tool calls → agent has finished gathering data; parse the JSON plan from content
         if not msg.tool_calls:
+            content = msg.content or ""
+            yield _sse({"type": "step", "tool": "finalize_plan", "message": "Building your complete plan…"})
+            match = re.search(r"```json\s*([\s\S]*?)\s*```", content)
+            if match:
+                try:
+                    plan = json.loads(match.group(1))
+                    plan.setdefault("getting_there", {}).setdefault("flights_url", flights_url)
+                    plan.setdefault("accommodation", {}).setdefault("booking_url", booking_url)
+                    plan["destination"] = destination
+                    plan["start_date"]  = start_date
+                    plan["end_date"]    = end_date
+                    yield _sse({"type": "complete", "plan": plan})
+                    return
+                except json.JSONDecodeError:
+                    pass
+            # Fallback: try parsing the entire content as JSON (no code fence)
+            try:
+                plan = json.loads(content)
+                plan.setdefault("getting_there", {}).setdefault("flights_url", flights_url)
+                plan.setdefault("accommodation", {}).setdefault("booking_url", booking_url)
+                plan["destination"] = destination
+                plan["start_date"]  = start_date
+                plan["end_date"]    = end_date
+                yield _sse({"type": "complete", "plan": plan})
+                return
+            except Exception:
+                pass
             yield _sse({"type": "error", "message": "Agent stopped without finalising the plan."})
             return
 
@@ -515,20 +481,6 @@ async def _run_agent(
 
             label = _TOOL_LABELS.get(tool_name, tool_name.replace("_", " ").title())
             yield _sse({"type": "step", "tool": tool_name, "message": f"{label}…"})
-
-            # finalize_plan → extract the plan and return
-            if tool_name == "finalize_plan":
-                yield _sse({"type": "step", "tool": "finalize_plan", "message": "Putting it all together…"})
-                plan = dict(tool_args)
-                plan.setdefault("getting_there", {})
-                plan["getting_there"].setdefault("flights_url", flights_url)
-                plan.setdefault("accommodation", {})
-                plan["accommodation"].setdefault("booking_url", booking_url)
-                plan["destination"]  = destination
-                plan["start_date"]   = start_date
-                plan["end_date"]     = end_date
-                yield _sse({"type": "complete", "plan": plan})
-                return
 
             result = await _exec_tool(tool_name, tool_args)
 
