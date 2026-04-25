@@ -10,69 +10,65 @@ logger = logging.getLogger("tourai.api")
 _PLACES_URL = "https://api.geoapify.com/v2/places"
 
 # Geoapify category → our poi_type label
+# Only confirmed-valid Geoapify categories listed here.
+# Historical sights (castles, ruins, monuments) are under tourism.sights.* — NOT historic.*
 _CATEGORY_MAP = {
-    "tourism.sights":             "attraction",
-    "tourism.attraction":         "attraction",
-    "entertainment.museum":       "museum",
-    "entertainment.art_gallery":  "art_gallery",
-    "entertainment.gallery":      "gallery",
-    "entertainment.culture":      "culture",
-    "entertainment.theme_park":   "theme_park",
-    "entertainment.aquarium":     "aquarium",
-    "entertainment.zoo":          "zoo",
-    "entertainment.cinema":       "cinema",
-    "entertainment.theatre":      "theatre",
-    "natural.park":               "park",
-    "natural.national_park":      "park",
-    "natural.nature_reserve":     "nature_reserve",
-    "natural.forest":             "park",
-    "natural.beach":              "beach",
-    "natural.peak":               "peak",
-    "catering.restaurant":        "restaurant",
-    "catering.cafe":              "cafe",
-    "catering.bar":               "bar",
-    "catering.pub":               "pub",
-    "catering.bakery":            "bakery",
-    "historic":                   "historic",
-    "historic.monument":          "monument",
-    "historic.memorial":          "memorial",
-    "historic.castle":            "castle",
-    "historic.ruins":             "ruins",
-    "historic.archaeological_site": "archaeological_site",
-    "commercial.shopping_mall":   "mall",
-    "commercial.market":          "marketplace",
-    "sport":                      "sports_centre",
-    "sport.stadium":              "stadium",
-    "sport.swimming_pool":        "swimming_pool",
+    "tourism.sights":            "attraction",
+    "tourism.sights.castle":     "castle",
+    "tourism.sights.monument":   "monument",
+    "tourism.sights.memorial":   "memorial",
+    "tourism.sights.ruins":      "ruins",
+    "tourism.sights.archaeological_site": "archaeological_site",
+    "tourism.sights.viewpoint":  "viewpoint",
+    "tourism.sights.tower":      "tower",
+    "tourism.sights.fort":       "castle",
+    "tourism.attraction":        "attraction",
+    "entertainment.museum":      "museum",
+    "entertainment.art_gallery": "art_gallery",
+    "entertainment.cinema":      "cinema",
+    "entertainment.theme_park":  "theme_park",
+    "entertainment.aquarium":    "aquarium",
+    "entertainment.zoo":         "zoo",
+    "natural.park":              "park",
+    "natural.forest":            "park",
+    "natural.beach":             "beach",
+    "natural.peak":              "peak",
+    "catering.restaurant":       "restaurant",
+    "catering.cafe":             "cafe",
+    "catering.bar":              "bar",
+    "catering.pub":              "pub",
+    "catering.fast_food":        "fast_food",
+    "commercial.shopping_mall":  "mall",
+    "commercial.market":         "marketplace",
+    "sport.stadium":             "stadium",
+    "sport.sports_centre":       "sports_centre",
+    "sport.swimming_pool":       "swimming_pool",
+    "production.winery":         "winery",
+    "production.brewery":        "brewery",
 }
 
-# Categories sent to Geoapify — must be valid subcategories (no bare top-level like "historic")
+# Only confirmed-valid Geoapify category strings.
+# Any invalid entry makes the entire request return 400 — keep this list conservative.
 _CATEGORIES = ",".join([
     "tourism.sights",
     "tourism.attraction",
     "entertainment.museum",
     "entertainment.art_gallery",
-    "entertainment.culture",
+    "entertainment.cinema",
     "entertainment.theme_park",
     "entertainment.aquarium",
     "entertainment.zoo",
-    "entertainment.cinema",
-    "entertainment.theatre",
     "natural.park",
-    "natural.national_park",
-    "natural.nature_reserve",
     "natural.beach",
+    "natural.peak",
     "catering.restaurant",
     "catering.cafe",
     "catering.bar",
     "catering.pub",
-    "historic.monument",
-    "historic.memorial",
-    "historic.castle",
-    "historic.ruins",
-    "historic.archaeological_site",
     "commercial.market",
     "sport.stadium",
+    "production.winery",
+    "production.brewery",
 ])
 
 
@@ -110,10 +106,11 @@ def _geoapify_to_poi(feature: dict[str, Any]) -> dict[str, Any] | None:
     }
     # Expose the primary category under the OSM-style key that matches poi_type
     osm_key = (
-        "tourism" if poi_type in {"attraction", "museum", "art_gallery", "gallery", "theme_park", "aquarium", "zoo"}
-        else "leisure" if poi_type in {"park", "nature_reserve", "beach", "peak", "sports_centre", "swimming_pool"}
-        else "historic" if poi_type in {"historic", "monument", "memorial", "castle", "ruins", "archaeological_site"}
-        else "amenity" if poi_type in {"restaurant", "cafe", "bar", "pub", "bakery", "cinema", "theatre", "culture"}
+        "tourism"  if poi_type in {"attraction", "museum", "art_gallery", "theme_park", "aquarium", "zoo",
+                                    "castle", "monument", "memorial", "ruins", "archaeological_site",
+                                    "viewpoint", "tower", "winery", "brewery"}
+        else "leisure"  if poi_type in {"park", "beach", "peak", "sports_centre", "swimming_pool", "stadium"}
+        else "amenity"  if poi_type in {"restaurant", "cafe", "bar", "pub", "fast_food", "cinema", "mall", "marketplace"}
         else "leisure"
     )
     tags[osm_key] = poi_type
