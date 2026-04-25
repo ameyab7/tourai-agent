@@ -5,7 +5,6 @@ import logging
 import math
 from datetime import datetime, timezone
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
@@ -186,24 +185,8 @@ class RecommendationsResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Overpass fetch
+# POI fetch via Geoapify Places API
 # ---------------------------------------------------------------------------
-
-_OVERPASS_MIRRORS = [
-    "https://overpass.kumi.systems/api/interpreter",
-    "https://overpass.private.coffee/api/interpreter",
-    "https://overpass.osm.ch/api/interpreter",
-]
-
-# [timeout:12] so each mirror gives up before our per-mirror httpx timeout
-_QUERY = """\
-[out:json][timeout:12];
-nw(around:{radius},{lat},{lon})
-["name"]
-[~"^(tourism|amenity|leisure|historic|natural)$"~"."];
-out center 100;
-"""
-
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     R   = 6371.0
@@ -214,77 +197,10 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return R * 2 * math.asin(math.sqrt(a))
 
 
-def _parse_elements(elements: list) -> list[dict]:
-    pois = []
-    for el in elements:
-        name = el.get("tags", {}).get("name", "").strip()
-        if not name:
-            continue
-        clat = el.get("lat") or el.get("center", {}).get("lat")
-        clon = el.get("lon") or el.get("center", {}).get("lon")
-        if not clat or not clon:
-            continue
-        tags     = el.get("tags", {})
-        poi_type = (
-            tags.get("tourism") or tags.get("amenity") or
-            tags.get("leisure") or tags.get("historic") or
-            tags.get("natural") or "place"
-        )
-        pois.append({
-            "id":       str(el.get("id", "")),
-            "name":     name,
-            "lat":      clat,
-            "lon":      clon,
-            "poi_type": poi_type,
-            "tags":     tags,
-        })
-    return pois
-
-
-async def _try_mirror(mirror: str, query: str) -> list[dict]:
-    """Attempt one Overpass mirror. Raises on failure so gather can skip it."""
-    async with httpx.AsyncClient(timeout=15) as client:
-        r = await client.post(
-            mirror,
-            data={"data": query},
-            headers={"Accept": "application/json"},
-        )
-        if r.status_code not in (200, 201):
-            raise ValueError(f"HTTP {r.status_code}")
-        pois = _parse_elements(r.json().get("elements", []))
-        logger.info("overpass_ok", extra={"mirror": mirror, "pois": len(pois)})
-        return pois
-
-
 async def _fetch_pois(lat: float, lon: float, radius_m: int) -> list[dict]:
-    """Fire all mirrors in parallel; return the first successful result."""
-    query = _QUERY.format(radius=radius_m, lat=lat, lon=lon)
-
-    tasks = {
-        asyncio.ensure_future(_try_mirror(m, query)): m
-        for m in _OVERPASS_MIRRORS
-    }
-    pending = set(tasks)
-
-    try:
-        while pending:
-            done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
-            for fut in done:
-                exc = fut.exception()
-                if exc is None:
-                    # Cancel remaining in-flight requests
-                    for p in pending:
-                        p.cancel()
-                    return fut.result()
-                logger.warning("overpass_mirror_failed", extra={
-                    "mirror": tasks[fut], "error": str(exc),
-                })
-    finally:
-        for p in pending:
-            p.cancel()
-
-    logger.warning("overpass_all_mirrors_failed")
-    return []
+    from utils.geoapify_places import fetch_pois
+    from api.config import settings
+    return await fetch_pois(lat, lon, radius_m, settings.geoapify_api_key)
 
 
 # ---------------------------------------------------------------------------
