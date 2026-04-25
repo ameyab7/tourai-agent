@@ -1,7 +1,7 @@
 """api/routes/itinerary_agent.py — Agentic trip planner with SSE streaming.
 
 Architecture:
-  The agent decides which tools to call. Because gpt-oss-120b batches tool
+  The agent decides which tools to call. Because llama-4-scout batches tool
   calls in a single response, we execute every batch in parallel with
   asyncio.gather — so the agent is both autonomous AND fast.
 
@@ -342,16 +342,14 @@ class _TC:
 
 
 async def _groq_call(client, system: str, messages: list) -> _Msg:
-    """Stream openai/gpt-oss-120b and accumulate chunks into a _Msg."""
+    """Stream meta-llama/llama-4-scout-17b-16e-instruct and accumulate chunks into a _Msg."""
     stream = await client.chat.completions.create(
-        model="openai/gpt-oss-120b",
+        model="meta-llama/llama-4-scout-17b-16e-instruct",
         messages=[{"role": "system", "content": system}] + messages,
         tools=TOOLS,
         tool_choice="auto",
-        temperature=1,
-        max_completion_tokens=4096,
-        top_p=1,
-        reasoning_effort="medium",
+        temperature=0.3,
+        max_tokens=4000,
         stream=True,
     )
 
