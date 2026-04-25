@@ -341,17 +341,27 @@ class _TC:
         self.function = fn
 
 
-async def _groq_call(client, system: str, messages: list) -> _Msg:
-    """Call llama-3.3-70b-versatile with streaming and accumulate into a _Msg."""
-    stream = await client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+async def _groq_call(client, system: str, messages: list, tools_active: bool = True) -> _Msg:
+    """Stream openai/gpt-oss-120b and accumulate chunks into a _Msg.
+
+    tools_active=True  → iteration 1, agent needs to call tools (send full TOOLS list)
+    tools_active=False → iteration 2+, agent only needs to output the plan JSON
+                         (drop tool definitions — saves ~450 tokens per call)
+    """
+    kwargs = dict(
+        model="openai/gpt-oss-120b",
         messages=[{"role": "system", "content": system}] + messages,
-        tools=TOOLS,
-        tool_choice="auto",
-        temperature=0.3,
-        max_tokens=4000,
+        temperature=1,
+        max_completion_tokens=4096,
+        top_p=1,
+        reasoning_effort="medium",
         stream=True,
     )
+    if tools_active:
+        kwargs["tools"]       = TOOLS
+        kwargs["tool_choice"] = "auto"
+
+    stream = await client.chat.completions.create(**kwargs)
 
     content: str = ""
     tc_map: dict = {}  # index → {id, name, arguments}
@@ -428,7 +438,9 @@ async def _run_agent(
     yield _sse({"type": "start", "message": f"Planning your trip to {destination}…"})
 
     for iteration in range(MAX_ITERATIONS):
-        msg = await _groq_call(groq_client, system, messages)
+        # iteration 0: send tools so agent can fetch data
+        # iteration 1+: drop tools — agent only needs to output the plan JSON
+        msg = await _groq_call(groq_client, system, messages, tools_active=(iteration == 0))
 
         # No tool calls → agent output the final plan
         if not msg.tool_calls:
