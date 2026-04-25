@@ -178,7 +178,7 @@ async def generate_itinerary(
 
     # 1. Geocode
     from utils.google_places import geocode_destination
-    geo = await geocode_destination(body.destination)
+    geo = await geocode_destination(body.destination, api_key=settings.geoapify_api_key)
     if not geo:
         raise HTTPException(status_code=422, detail=f"Could not find destination: {body.destination!r}")
 

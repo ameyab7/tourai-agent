@@ -7,35 +7,57 @@ import httpx
 
 logger = logging.getLogger("tourai.api")
 
-_NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
-_PLACES_SEARCH = "https://maps.googleapis.com/maps/api/place/textsearch/json"
-_PLACES_PHOTO  = "https://maps.googleapis.com/maps/api/place/photo"
+_GEOAPIFY_GEOCODE = "https://api.geoapify.com/v1/geocode/search"
+_NOMINATIM_URL   = "https://nominatim.openstreetmap.org/search"
+_PLACES_SEARCH   = "https://maps.googleapis.com/maps/api/place/textsearch/json"
+_PLACES_PHOTO    = "https://maps.googleapis.com/maps/api/place/photo"
 
 
-async def geocode_destination(destination: str) -> dict[str, Any] | None:
-    """Geocode a destination string to lat/lon using Nominatim (free, no key)."""
+async def geocode_destination(destination: str, api_key: str = "") -> dict[str, Any] | None:
+    """Geocode a destination using Geoapify (primary) with Nominatim as fallback."""
+    # 1. Geoapify — reliable, production-grade, uses our existing key
+    if api_key:
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(
+                    _GEOAPIFY_GEOCODE,
+                    params={"text": destination, "apiKey": api_key, "limit": 1, "format": "json"},
+                )
+                resp.raise_for_status()
+                results = resp.json().get("results", [])
+                if results:
+                    r = results[0]
+                    return {
+                        "lat":          float(r["lat"]),
+                        "lon":          float(r["lon"]),
+                        "display_name": r.get("formatted", destination),
+                        "type":         r.get("result_type", ""),
+                    }
+        except Exception as exc:
+            logger.warning("geoapify_geocode_failed", extra={"destination": destination, "error": str(exc)})
+
+    # 2. Nominatim fallback
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
                 _NOMINATIM_URL,
-                params={"q": destination, "format": "json", "limit": 1, "addressdetails": 1},
-                headers={"User-Agent": "TourAI/1.0 (tourai-app)"},
+                params={"q": destination, "format": "json", "limit": 1},
+                headers={"User-Agent": "TourAI/1.0 (contact@tourai.app)"},
             )
             resp.raise_for_status()
             results = resp.json()
-            if not results:
-                return None
-            r = results[0]
-            return {
-                "lat":          float(r["lat"]),
-                "lon":          float(r["lon"]),
-                "display_name": r.get("display_name", destination),
-                "type":         r.get("type", ""),
-                "importance":   float(r.get("importance", 0)),
-            }
+            if results:
+                r = results[0]
+                return {
+                    "lat":          float(r["lat"]),
+                    "lon":          float(r["lon"]),
+                    "display_name": r.get("display_name", destination),
+                    "type":         r.get("type", ""),
+                }
     except Exception as exc:
-        logger.warning("geocode_failed", extra={"destination": destination, "error": str(exc)})
-        return None
+        logger.warning("nominatim_geocode_failed", extra={"destination": destination, "error": str(exc)})
+
+    return None
 
 
 async def search_destinations(query: str, limit: int = 5) -> list[dict[str, Any]]:
