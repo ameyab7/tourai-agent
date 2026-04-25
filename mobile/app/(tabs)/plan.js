@@ -341,7 +341,7 @@ export default function PlanScreen() {
   const [error,          setError]          = useState(null);
   const [profileLoading, setProfileLoading] = useState(true);
   const [token,          setToken]          = useState(null);
-  const readerRef = useRef(null);
+  const xhrRef = useRef(null);
 
   // Load profile on mount
   useEffect(() => {
@@ -389,65 +389,72 @@ export default function PlanScreen() {
     setPlan(null);
     setAgentSteps([]);
 
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const payload = JSON.stringify({
+      destination,
+      start_date:          startDate,
+      end_date:            endDate,
+      interests,
+      travel_style:        style,
+      pace,
+      drive_tolerance_hrs: driveTol,
+    });
 
-    try {
-      const resp = await fetch(`${API_BASE}/v1/itinerary/stream`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          destination,
-          start_date:          startDate,
-          end_date:            endDate,
-          interests,
-          travel_style:        style,
-          pace,
-          drive_tolerance_hrs: driveTol,
-        }),
-      });
+    // XHR onprogress is the reliable way to read SSE in React Native / Expo Go.
+    // fetch+getReader is not supported in the Hermes/Expo fetch polyfill.
+    const xhr = new XMLHttpRequest();
+    xhrRef.current = xhr;
+    let cursor = 0; // tracks how much of responseText we've already parsed
 
-      if (!resp.ok) {
-        const body = await resp.json().catch(() => ({}));
-        throw new Error(body.detail || `Error ${resp.status}`);
-      }
+    xhr.open('POST', `${API_BASE}/v1/itinerary/stream`);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
 
-      const reader  = resp.body.getReader();
-      readerRef.current = reader;
-      const decoder = new TextDecoder();
-      let   buffer  = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop(); // keep incomplete line
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          try {
-            const event = JSON.parse(line.slice(6));
-
-            if (event.type === 'start' || event.type === 'step' || event.type === 'result') {
-              setAgentSteps(prev => [...prev, event.message]);
-            } else if (event.type === 'complete') {
-              setPlan(event.plan);
-              setStreaming(false);
-              return;
-            } else if (event.type === 'error') {
-              throw new Error(event.message);
-            }
-          } catch (parseErr) {
-            if (parseErr.message && !parseErr.message.includes('JSON')) throw parseErr;
+    xhr.onprogress = () => {
+      const newText = xhr.responseText.slice(cursor);
+      cursor = xhr.responseText.length;
+      for (const line of newText.split('\n')) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const event = JSON.parse(line.slice(6));
+          if (event.type === 'start' || event.type === 'step' || event.type === 'result') {
+            setAgentSteps(prev => [...prev, event.message]);
+          } else if (event.type === 'complete') {
+            setPlan(event.plan);
+            setStreaming(false);
+          } else if (event.type === 'error') {
+            setError(event.message);
+            setStreaming(false);
           }
-        }
+        } catch (_) {}
       }
-    } catch (err) {
-      setError(err.message || 'Could not generate itinerary. Try again.');
+    };
+
+    xhr.onload = () => {
+      // Parse any remaining text that onprogress may have missed
+      const remaining = xhr.responseText.slice(cursor);
+      for (const line of remaining.split('\n')) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const event = JSON.parse(line.slice(6));
+          if (event.type === 'complete') { setPlan(event.plan); }
+          if (event.type === 'error')    { setError(event.message); }
+        } catch (_) {}
+      }
       setStreaming(false);
-    }
+    };
+
+    xhr.onerror = () => {
+      setError('Network error — please check your connection and try again.');
+      setStreaming(false);
+    };
+
+    xhr.ontimeout = () => {
+      setError('Request timed out. Please try again.');
+      setStreaming(false);
+    };
+
+    xhr.timeout = 120000; // 2 min — agent can take ~30s
+    xhr.send(payload);
   }
 
   // ── Streaming / loading screen ────────────────────────────────────────────
