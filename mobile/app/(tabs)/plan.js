@@ -58,7 +58,7 @@ const STYLE_OPTIONS = [
 const LOADING_MESSAGES = [
   'Exploring the area for hidden gems…',
   'Matching spots to your interests…',
-  'Checking what's worth your time…',
+  "Checking what's worth your time…",
   'Crafting Day 1…',
   'Adding insider tips…',
   'Putting the finishing touches…',
