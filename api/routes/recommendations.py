@@ -191,12 +191,13 @@ class RecommendationsResponse(BaseModel):
 
 _OVERPASS_MIRRORS = [
     "https://overpass.kumi.systems/api/interpreter",
-    "https://overpass-api.de/api/interpreter",
-    "https://overpass.openstreetmap.ru/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
+    "https://overpass.osm.ch/api/interpreter",
 ]
 
+# [timeout:12] so each mirror gives up before our per-mirror httpx timeout
 _QUERY = """\
-[out:json][timeout:20];
+[out:json][timeout:12];
 nw(around:{radius},{lat},{lon})
 ["name"]
 [~"^(tourism|amenity|leisure|historic|natural)$"~"."];
@@ -213,52 +214,76 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return R * 2 * math.asin(math.sqrt(a))
 
 
+def _parse_elements(elements: list) -> list[dict]:
+    pois = []
+    for el in elements:
+        name = el.get("tags", {}).get("name", "").strip()
+        if not name:
+            continue
+        clat = el.get("lat") or el.get("center", {}).get("lat")
+        clon = el.get("lon") or el.get("center", {}).get("lon")
+        if not clat or not clon:
+            continue
+        tags     = el.get("tags", {})
+        poi_type = (
+            tags.get("tourism") or tags.get("amenity") or
+            tags.get("leisure") or tags.get("historic") or
+            tags.get("natural") or "place"
+        )
+        pois.append({
+            "id":       str(el.get("id", "")),
+            "name":     name,
+            "lat":      clat,
+            "lon":      clon,
+            "poi_type": poi_type,
+            "tags":     tags,
+        })
+    return pois
+
+
+async def _try_mirror(mirror: str, query: str) -> list[dict]:
+    """Attempt one Overpass mirror. Raises on failure so gather can skip it."""
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.post(
+            mirror,
+            data={"data": query},
+            headers={"Accept": "application/json"},
+        )
+        if r.status_code not in (200, 201):
+            raise ValueError(f"HTTP {r.status_code}")
+        pois = _parse_elements(r.json().get("elements", []))
+        logger.info("overpass_ok", extra={"mirror": mirror, "pois": len(pois)})
+        return pois
+
+
 async def _fetch_pois(lat: float, lon: float, radius_m: int) -> list[dict]:
+    """Fire all mirrors in parallel; return the first successful result."""
     query = _QUERY.format(radius=radius_m, lat=lat, lon=lon)
-    for mirror in _OVERPASS_MIRRORS:
-        try:
-            async with httpx.AsyncClient(timeout=20) as client:
-                r = await client.post(
-                    mirror,
-                    data={"data": query},
-                    headers={"Accept": "application/json"},
-                )
-                if r.status_code in (406, 429, 500, 502, 503, 504):
-                    logger.warning("overpass_mirror_skipped", extra={
-                        "mirror": mirror, "status": r.status_code,
-                    })
-                    continue
-                r.raise_for_status()
 
-                pois = []
-                for el in r.json().get("elements", []):
-                    name = el.get("tags", {}).get("name", "").strip()
-                    if not name:
-                        continue
-                    clat = el.get("lat") or el.get("center", {}).get("lat")
-                    clon = el.get("lon") or el.get("center", {}).get("lon")
-                    if not clat or not clon:
-                        continue
-                    tags     = el.get("tags", {})
-                    poi_type = (
-                        tags.get("tourism") or tags.get("amenity") or
-                        tags.get("leisure") or tags.get("historic") or
-                        tags.get("natural") or "place"
-                    )
-                    pois.append({
-                        "id":       str(el.get("id", "")),
-                        "name":     name,
-                        "lat":      clat,
-                        "lon":      clon,
-                        "poi_type": poi_type,
-                        "tags":     tags,
-                    })
-                logger.info("overpass_ok", extra={"mirror": mirror, "pois": len(pois)})
-                return pois
+    tasks = {
+        asyncio.ensure_future(_try_mirror(m, query)): m
+        for m in _OVERPASS_MIRRORS
+    }
+    pending = set(tasks)
 
-        except Exception as exc:
-            logger.warning("overpass_failed", extra={"mirror": mirror, "error": str(exc)})
+    try:
+        while pending:
+            done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+            for fut in done:
+                exc = fut.exception()
+                if exc is None:
+                    # Cancel remaining in-flight requests
+                    for p in pending:
+                        p.cancel()
+                    return fut.result()
+                logger.warning("overpass_mirror_failed", extra={
+                    "mirror": tasks[fut], "error": str(exc),
+                })
+    finally:
+        for p in pending:
+            p.cancel()
 
+    logger.warning("overpass_all_mirrors_failed")
     return []
 
 
@@ -289,8 +314,25 @@ async def get_recommendations(
         _fetch_pois(body.lat, body.lon, int(body.radius_km * 1000)),
     )
 
+    # Gracefully return empty cards when all Overpass mirrors fail
     if not raw_pois:
-        raise HTTPException(status_code=503, detail="Could not fetch nearby places")
+        logger.warning("recommendations_no_pois", extra={"lat": body.lat, "lon": body.lon})
+        light = get_light_windows(
+            weather.get("sunrise_iso", ""), weather.get("sunset_iso", "")
+        )
+        return RecommendationsResponse(
+            cards=[],
+            mood=body.mood,
+            conditions={
+                "weather":         weather.get("description", ""),
+                "temperature_c":   weather.get("temperature_c", 0),
+                "is_clear":        weather.get("is_clear", False),
+                "light_window":    light["label"],
+                "light_active":    light["active"],
+                "light_mins_away": light["minutes_away"],
+            },
+            timestamp=datetime.now(timezone.utc).isoformat(),
+        )
 
     user_interests: list[str] = profile_data.get("interests") or []
     light = get_light_windows(weather["sunrise_iso"], weather["sunset_iso"])
@@ -318,7 +360,12 @@ async def get_recommendations(
         candidates.append({**poi, "distance_km": dist_km})
 
     if not candidates:
-        raise HTTPException(status_code=503, detail="No places found within radius")
+        return RecommendationsResponse(
+            cards=[],
+            mood=body.mood,
+            conditions=conditions_summary,
+            timestamp=datetime.now(timezone.utc).isoformat(),
+        )
 
     # Score and sort
     scored: list[tuple[float, dict, str]] = []

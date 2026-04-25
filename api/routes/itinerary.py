@@ -20,21 +20,18 @@ logger = logging.getLogger("tourai.api")
 # ---------------------------------------------------------------------------
 
 _OVERPASS_MIRRORS = [
-    "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
-    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
+    "https://overpass.osm.ch/api/interpreter",
 ]
 
-_POI_QUERY = """
-[out:json][timeout:25];
+_POI_QUERY = """\
+[out:json][timeout:12];
 (
-  node["tourism"~"attraction|museum|gallery|viewpoint|artwork|theme_park|zoo|aquarium"](around:{radius},{lat},{lon});
-  node["historic"~"monument|memorial|castle|ruins|building|site"](around:{radius},{lat},{lon});
-  node["amenity"~"restaurant|cafe|bar|theatre|cinema|arts_centre"](around:{radius},{lat},{lon});
-  node["leisure"~"park|nature_reserve|garden|beach"](around:{radius},{lat},{lon});
-  way["tourism"~"attraction|museum|gallery|viewpoint"](around:{radius},{lat},{lon});
-  way["historic"~"monument|memorial|castle|ruins|building|site"](around:{radius},{lat},{lon});
-  way["leisure"~"park|nature_reserve|garden"](around:{radius},{lat},{lon});
+  nw["tourism"~"attraction|museum|gallery|viewpoint|artwork|theme_park|zoo|aquarium"](around:{radius},{lat},{lon});
+  nw["historic"~"monument|memorial|castle|ruins|building|site"](around:{radius},{lat},{lon});
+  nw["amenity"~"restaurant|cafe|bar|theatre|cinema|arts_centre"](around:{radius},{lat},{lon});
+  nw["leisure"~"park|nature_reserve|garden|beach"](around:{radius},{lat},{lon});
 );
 out center 60;
 """
@@ -42,38 +39,52 @@ out center 60;
 import httpx
 
 
+async def _try_mirror(mirror: str, query: str) -> list[dict]:
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(
+            mirror,
+            data={"data": query},
+            headers={"Accept": "application/json"},
+        )
+        if resp.status_code not in (200, 201):
+            raise ValueError(f"HTTP {resp.status_code}")
+        pois = []
+        for el in resp.json().get("elements", []):
+            tags = el.get("tags", {})
+            name = tags.get("name")
+            if not name:
+                continue
+            lat_ = el.get("lat") or (el.get("center") or {}).get("lat")
+            lon_ = el.get("lon") or (el.get("center") or {}).get("lon")
+            if not lat_ or not lon_:
+                continue
+            poi_type = (
+                tags.get("tourism") or tags.get("historic") or
+                tags.get("amenity") or tags.get("leisure") or "place"
+            )
+            pois.append({"name": name, "poi_type": poi_type, "tags": tags, "lat": lat_, "lon": lon_})
+        return pois
+
+
 async def _fetch_pois(lat: float, lon: float, radius_m: int = 5000) -> list[dict]:
+    """Fire all mirrors in parallel; return the first successful result."""
     query = _POI_QUERY.format(lat=lat, lon=lon, radius=radius_m)
-    for mirror in _OVERPASS_MIRRORS:
-        try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.post(
-                    mirror,
-                    data={"data": query},
-                    headers={"Accept": "application/json"},
-                )
-                if resp.status_code in (406, 429) or resp.status_code >= 500:
-                    continue
-                resp.raise_for_status()
-                elements = resp.json().get("elements", [])
-                pois = []
-                for el in elements:
-                    tags = el.get("tags", {})
-                    name = tags.get("name")
-                    if not name:
-                        continue
-                    lat_ = el.get("lat") or (el.get("center") or {}).get("lat")
-                    lon_ = el.get("lon") or (el.get("center") or {}).get("lon")
-                    if not lat_ or not lon_:
-                        continue
-                    poi_type = (
-                        tags.get("tourism") or tags.get("historic") or
-                        tags.get("amenity") or tags.get("leisure") or "place"
-                    )
-                    pois.append({"name": name, "poi_type": poi_type, "tags": tags, "lat": lat_, "lon": lon_})
-                return pois
-        except Exception as exc:
-            logger.warning("overpass_mirror_failed", extra={"mirror": mirror, "error": str(exc)})
+    tasks = {asyncio.ensure_future(_try_mirror(m, query)): m for m in _OVERPASS_MIRRORS}
+    pending = set(tasks)
+    try:
+        while pending:
+            done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+            for fut in done:
+                if fut.exception() is None:
+                    for p in pending:
+                        p.cancel()
+                    return fut.result()
+                logger.warning("overpass_mirror_failed", extra={
+                    "mirror": tasks[fut], "error": str(fut.exception()),
+                })
+    finally:
+        for p in pending:
+            p.cancel()
     return []
 
 
