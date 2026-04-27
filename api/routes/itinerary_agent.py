@@ -205,8 +205,8 @@ async def _call_planner(system: str, user_msg: str) -> str:
             {"role": "user",   "content": user_msg},
         ],
         temperature=1,
-        max_completion_tokens=4096,
-        reasoning_effort="medium",
+        max_completion_tokens=6000,
+        reasoning_effort="low",
         stream=True,
     )
 
@@ -304,18 +304,31 @@ Weather forecast:
     # Strip <think>...</think> reasoning block before parsing
     content_clean = re.sub(r"<think>[\s\S]*?</think>", "", content).strip()
 
-    # Parse the JSON plan
+    plan = None
+
+    # 1. Prefer a fully closed ```json ... ``` block
     match = re.search(r"```json\s*([\s\S]*?)\s*```", content_clean)
     if match:
         try:
             plan = json.loads(match.group(1))
         except json.JSONDecodeError:
-            plan = None
-    else:
+            pass
+
+    # 2. Truncated response — grab everything after ```json and parse what we have
+    if plan is None:
+        open_match = re.search(r"```json\s*([\s\S]*)", content_clean)
+        if open_match:
+            try:
+                plan = json.loads(open_match.group(1).strip())
+            except json.JSONDecodeError:
+                pass
+
+    # 3. Raw JSON with no code fence
+    if plan is None:
         try:
             plan = json.loads(content_clean)
         except Exception:
-            plan = None
+            pass
 
     if plan:
         plan.setdefault("getting_there", {}).setdefault("flights_url", flights_url)
