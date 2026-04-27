@@ -29,7 +29,7 @@ from utils.geoapify_places import _PLACES_URL
 router = APIRouter()
 logger = logging.getLogger("tourai.api")
 
-MODEL = "openai/gpt-oss-120b"
+MODEL = "llama-3.3-70b-versatile"
 
 
 # ── Server-side pre-fetch functions ──────────────────────────────────────────
@@ -207,9 +207,8 @@ async def _call_planner(system: str, user_msg: str) -> str:
             {"role": "system", "content": system},
             {"role": "user",   "content": user_msg},
         ],
-        temperature=1,
-        max_completion_tokens=4000,
-        reasoning_effort="low",
+        temperature=0.4,
+        max_tokens=4000,
         stream=True,
     )
 
