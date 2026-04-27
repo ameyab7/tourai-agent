@@ -34,13 +34,16 @@ MODEL = "openai/gpt-oss-120b"
 
 # ── Server-side pre-fetch functions ──────────────────────────────────────────
 
-async def _fetch_attractions(lat: float, lon: float) -> list:
+async def _fetch_attractions(lat: float, lon: float, interests: list[str]) -> list:
     from utils.geoapify_places import fetch_pois
-    pois = await fetch_pois(lat, lon, 6000, settings.geoapify_api_key, limit=20)
-    filtered = [p for p in pois if p["poi_type"] not in {"restaurant","cafe","bar","pub","fast_food"}]
+    from utils.poi_ranker import rank_pois
+    pois = await fetch_pois(lat, lon, 6000, settings.geoapify_api_key, limit=50)
+    food_types = {"restaurant", "cafe", "bar", "pub", "fast_food"}
+    attractions = [p for p in pois if p["poi_type"] not in food_types]
+    ranked = rank_pois(attractions, interests, lat, lon, limit=10, max_per_type=3)
     return [
         {"name": p["name"], "poi_type": p["poi_type"], "lat": p["lat"], "lon": p["lon"]}
-        for p in filtered[:10]
+        for p in ranked
     ]
 
 
@@ -119,7 +122,7 @@ async def _fetch_weather(lat: float, lon: float, dates: list[str]) -> list:
 async def _prefetch_all(lat: float, lon: float, dates: list[str], interests: list[str]) -> dict:
     """Fetch all data sources in parallel — replaces the agent's first tool-calling iteration."""
     attractions, restaurants, hotels, weather = await asyncio.gather(
-        _fetch_attractions(lat, lon),
+        _fetch_attractions(lat, lon, interests),
         _fetch_restaurants(lat, lon),
         _fetch_hotels(lat, lon),
         _fetch_weather(lat, lon, dates),

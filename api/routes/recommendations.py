@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from api.auth import get_current_user
 from api.supabase_client import get_supabase
 from utils.golden_hour import get_light_windows
+from utils.poi_ranker import TYPE_TO_INTERESTS, poi_interests
 from utils.weather import get_conditions
 
 router = APIRouter()
@@ -21,40 +22,8 @@ logger = logging.getLogger("tourai.api")
 # Scoring tables
 # ---------------------------------------------------------------------------
 
-# OSM poi_type / tag value → interest categories
-_TYPE_TO_INTERESTS: dict[str, set[str]] = {
-    "park":             {"nature", "hiking", "photography", "social"},
-    "nature_reserve":   {"nature", "hiking", "photography"},
-    "garden":           {"nature", "photography", "relaxed"},
-    "viewpoint":        {"photography", "nature", "architecture"},
-    "peak":             {"hiking", "nature", "photography"},
-    "beach":            {"nature", "photography", "social"},
-    "museum":           {"history", "culture", "architecture"},
-    "art_gallery":      {"culture", "photography", "architecture"},
-    "gallery":          {"culture", "photography"},
-    "theatre":          {"culture", "social"},
-    "cinema":           {"culture", "social"},
-    "library":          {"culture", "history"},
-    "historic":         {"history", "architecture", "photography"},
-    "monument":         {"history", "architecture", "photography"},
-    "memorial":         {"history"},
-    "castle":           {"history", "architecture", "photography"},
-    "ruins":            {"history", "photography"},
-    "archaeological_site": {"history"},
-    "restaurant":       {"food", "social"},
-    "cafe":             {"food", "social"},
-    "bakery":           {"food"},
-    "pub":              {"social", "food"},
-    "bar":              {"social"},
-    "marketplace":      {"food", "social", "shopping"},
-    "mall":             {"shopping"},
-    "sports_centre":    {"sports"},
-    "stadium":          {"sports", "social"},
-    "swimming_pool":    {"sports"},
-    "pitch":            {"sports"},
-    "attraction":       {"culture", "photography"},
-    "artwork":          {"culture", "photography", "architecture"},
-}
+# Imported from utils.poi_ranker — single source of truth
+_TYPE_TO_INTERESTS = TYPE_TO_INTERESTS
 
 # Mood → which interests to boost for scoring
 _MOOD_BOOSTS: dict[str, set[str]] = {
@@ -72,19 +41,7 @@ _LIGHT_SENSITIVE = {"photography", "nature", "architecture"}
 _OUTDOOR_INTERESTS = {"nature", "hiking", "photography", "sports"}
 
 
-def _poi_interests(poi: dict) -> set[str]:
-    """Derive interest categories from a POI's type and OSM tags."""
-    cats: set[str] = set()
-    poi_type = poi.get("poi_type", "").lower()
-    cats |= _TYPE_TO_INTERESTS.get(poi_type, set())
-
-    tags = poi.get("tags", {})
-    for key in ("tourism", "amenity", "leisure", "historic", "natural"):
-        val = tags.get(key, "").lower()
-        if val:
-            cats |= _TYPE_TO_INTERESTS.get(val, set())
-
-    return cats
+_poi_interests = poi_interests
 
 
 def _score_poi(
