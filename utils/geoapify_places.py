@@ -146,7 +146,7 @@ async def fetch_pois(
         logger.warning("geoapify_no_key")
         return []
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.get(
                 _PLACES_URL,
                 params={
