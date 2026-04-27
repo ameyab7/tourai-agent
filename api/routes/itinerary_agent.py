@@ -29,18 +29,18 @@ from utils.geoapify_places import _PLACES_URL
 router = APIRouter()
 logger = logging.getLogger("tourai.api")
 
-MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
+MODEL = "openai/gpt-oss-120b"
 
 
 # ── Server-side pre-fetch functions ──────────────────────────────────────────
 
 async def _fetch_attractions(lat: float, lon: float) -> list:
     from utils.geoapify_places import fetch_pois
-    pois = await fetch_pois(lat, lon, 6000, settings.geoapify_api_key, limit=25)
+    pois = await fetch_pois(lat, lon, 6000, settings.geoapify_api_key, limit=20)
     filtered = [p for p in pois if p["poi_type"] not in {"restaurant","cafe","bar","pub","fast_food"}]
     return [
         {"name": p["name"], "poi_type": p["poi_type"], "lat": p["lat"], "lon": p["lon"]}
-        for p in filtered[:15]
+        for p in filtered[:10]
     ]
 
 
@@ -53,7 +53,7 @@ async def _fetch_restaurants(lat: float, lon: float) -> list:
                 params={
                     "categories": FOOD_CATS,
                     "filter": f"circle:{lon},{lat},3000",
-                    "limit": 15,
+                    "limit": 10,
                     "apiKey": settings.geoapify_api_key,
                 },
             )
@@ -68,7 +68,7 @@ async def _fetch_restaurants(lat: float, lon: float) -> list:
                 "name": name,
                 "cuisine": p.get("datasource", {}).get("raw", {}).get("cuisine", ""),
             })
-        return results[:10]
+        return results[:8]
     except Exception as exc:
         logger.warning("prefetch_restaurants_failed", extra={"error": str(exc)})
         return []
@@ -204,8 +204,9 @@ async def _call_planner(system: str, user_msg: str) -> str:
             {"role": "system", "content": system},
             {"role": "user",   "content": user_msg},
         ],
-        temperature=0.4,
-        max_tokens=6000,
+        temperature=1,
+        max_completion_tokens=4000,
+        reasoning_effort="low",
         stream=True,
     )
 

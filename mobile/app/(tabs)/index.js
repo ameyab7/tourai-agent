@@ -10,7 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 
-const API_BASE    = 'https://tourai-agent-production.up.railway.app';
+import { API_BASE } from '../../lib/config.js';
 const { height: SCREEN_H } = Dimensions.get('window');
 const MOOD_KEY    = 'home_mood';
 const MOOD_DATE_KEY = 'home_mood_date';
@@ -195,7 +195,11 @@ export default function HomeScreen() {
     setError(null);
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      let { data: { session } } = await supabase.auth.getSession();
+      if (session?.expires_at && session.expires_at * 1000 < Date.now()) {
+        const { data } = await supabase.auth.refreshSession();
+        session = data.session;
+      }
       if (!session) { setError('Not signed in'); return; }
 
       const lat = currentLoc?.lat ?? 37.7749;

@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 
-const API_BASE = 'https://tourai-agent-production.up.railway.app';
+import { API_BASE } from '../../lib/config.js';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -347,7 +347,11 @@ export default function PlanScreen() {
   useEffect(() => {
     (async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        let { data: { session } } = await supabase.auth.getSession();
+        if (session?.expires_at && session.expires_at * 1000 < Date.now()) {
+          const { data } = await supabase.auth.refreshSession();
+          session = data.session;
+        }
         if (!session) { setProfileLoading(false); return; }
         setToken(session.access_token);
         const res = await fetch(`${API_BASE}/v1/profile/${session.user.id}`, {
