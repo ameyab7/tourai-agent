@@ -3,7 +3,7 @@
 Architecture:
   All data (attractions, restaurants, hotels, weather, golden hour) is fetched
   server-side in parallel with asyncio.gather — no LLM needed for that.
-  One call to llama-4-scout gives it everything and it reasons through the plan.
+  One call to gpt-oss-120b gives it everything and it reasons through the plan.
 
   Flow:
     Step 1 — parallel pre-fetch (free, ~2-3 s)
@@ -29,7 +29,7 @@ from utils.geoapify_places import _PLACES_URL
 router = APIRouter()
 logger = logging.getLogger("tourai.api")
 
-MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
+MODEL = "openai/gpt-oss-120b"
 
 
 # ── Server-side pre-fetch functions ──────────────────────────────────────────
@@ -194,7 +194,7 @@ def _sse(payload: dict) -> str:
 # ── Planner call ──────────────────────────────────────────────────────────────
 
 async def _call_planner(system: str, user_msg: str) -> str:
-    """Single streaming call to deepseek-r1. Returns full response content."""
+    """Single streaming call to gpt-oss-120b. Returns full response content."""
     from groq import AsyncGroq
     client = AsyncGroq(api_key=settings.groq_api_key)
 
@@ -204,8 +204,9 @@ async def _call_planner(system: str, user_msg: str) -> str:
             {"role": "system", "content": system},
             {"role": "user",   "content": user_msg},
         ],
-        temperature=0.6,
-        max_tokens=8000,
+        temperature=1,
+        max_completion_tokens=4096,
+        reasoning_effort="default",
         stream=True,
     )
 
