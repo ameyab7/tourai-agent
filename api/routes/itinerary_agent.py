@@ -280,13 +280,13 @@ Booking URL: {booking_url}
 --- LIVE DATA ---
 
 Attractions nearby:
-{json.dumps(data['attractions'], indent=2)}
+{json.dumps(data['attractions'])}
 
 Restaurants nearby:
-{json.dumps(data['restaurants'], indent=2)}
+{json.dumps(data['restaurants'])}
 
 Hotels nearby:
-{json.dumps(data['hotels'], indent=2)}
+{json.dumps(data['hotels'])}
 
 Weather forecast:
 {weather_summary}
