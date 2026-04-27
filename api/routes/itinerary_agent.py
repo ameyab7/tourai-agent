@@ -3,7 +3,7 @@
 Architecture:
   All data (attractions, restaurants, hotels, weather, golden hour) is fetched
   server-side in parallel with asyncio.gather — no LLM needed for that.
-  One call to deepseek-r1 gives it everything and it reasons through the plan.
+  One call to llama-4-scout gives it everything and it reasons through the plan.
 
   Flow:
     Step 1 — parallel pre-fetch (free, ~2-3 s)
@@ -29,7 +29,7 @@ from utils.geoapify_places import _PLACES_URL
 router = APIRouter()
 logger = logging.getLogger("tourai.api")
 
-MODEL = "deepseek-r1-distill-llama-70b"
+MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 
 
 # ── Server-side pre-fetch functions ──────────────────────────────────────────
