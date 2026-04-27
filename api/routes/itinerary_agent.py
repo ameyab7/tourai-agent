@@ -206,7 +206,7 @@ async def _call_planner(system: str, user_msg: str) -> str:
         ],
         temperature=1,
         max_completion_tokens=4096,
-        reasoning_effort="default",
+        reasoning_effort="medium",
         stream=True,
     )
 
