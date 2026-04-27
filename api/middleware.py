@@ -16,11 +16,21 @@ from api import metrics
 logger = logging.getLogger("tourai.api")
 
 _rate_buckets: dict[str, list[float]] = defaultdict(list)
+_last_cleanup: float = 0.0
 
 
 def check_rate_limit(ip: str) -> bool:
+    global _last_cleanup
     now    = time.monotonic()
     window = 60.0
+
+    # Purge IPs with no recent activity every 5 minutes
+    if now - _last_cleanup > 300:
+        stale = [k for k, v in _rate_buckets.items() if not v or now - v[-1] > window]
+        for k in stale:
+            del _rate_buckets[k]
+        _last_cleanup = now
+
     _rate_buckets[ip] = [t for t in _rate_buckets[ip] if now - t < window]
     if len(_rate_buckets[ip]) >= settings.rate_limit_rpm:
         return False

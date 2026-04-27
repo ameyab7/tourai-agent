@@ -140,7 +140,7 @@ async def _prefetch_all(lat: float, lon: float, dates: list[str], interests: lis
     if "photography" in interests and data["weather"]:
         from utils.golden_hour import get_light_windows
         data["golden_hour"] = [
-            {"date": w["date"], **get_light_windows(w["sunrise_iso"], w["sunset_iso"])}
+            {"date": w.get("date", ""), **get_light_windows(w.get("sunrise_iso", ""), w.get("sunset_iso", ""))}
             for w in data["weather"]
             if w.get("sunrise_iso") and w.get("sunset_iso")
         ]
@@ -259,7 +259,7 @@ async def _run_planner(
     yield _sse({"type": "step", "tool": "finalize_plan", "message": "Putting it all together…"})
 
     weather_summary = "\n".join(
-        f"  {w['date']}: {w.get('description','?')} · {w.get('temp_high_c','?')}°C high / {w.get('temp_low_c','?')}°C low · {'clear' if w.get('is_clear') else 'not clear'}"
+        f"  {w.get('date','?')}: {w.get('description','?')} · {w.get('temp_high_c','?')}°C high / {w.get('temp_low_c','?')}°C low · {'clear' if w.get('is_clear') else 'not clear'}"
         for w in data["weather"]
     ) or "  Weather data unavailable"
 
@@ -372,8 +372,8 @@ async def stream_itinerary(
                     if not interests:      interests = p.get("interests") or []
                     if style == "solo":    style     = p.get("travel_style") or "solo"
                     if pace == "balanced": pace      = p.get("pace") or "balanced"
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("profile_load_failed", extra={"error": str(exc)})
 
     from utils.google_places import geocode_destination
     geo = await geocode_destination(body.destination, api_key=settings.geoapify_api_key)
@@ -382,9 +382,13 @@ async def stream_itinerary(
             yield _sse({"type": "error", "message": f"Could not find destination: {body.destination!r}"})
         return StreamingResponse(_err(), media_type="text/event-stream")
 
-    lat  = geo["lat"]
-    lon  = geo["lon"]
-    dest = geo["display_name"].split(",")[0].strip()
+    lat  = geo.get("lat")
+    lon  = geo.get("lon")
+    if lat is None or lon is None:
+        async def _err():
+            yield _sse({"type": "error", "message": f"Could not geocode destination: {body.destination!r}"})
+        return StreamingResponse(_err(), media_type="text/event-stream")
+    dest = (geo.get("display_name") or body.destination).split(",")[0].strip()
 
     async def _stream():
         try:

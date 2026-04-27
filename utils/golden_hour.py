@@ -3,11 +3,14 @@
 from datetime import datetime, timedelta, timezone
 
 
-def _parse(iso: str) -> datetime:
-    dt = datetime.fromisoformat(iso)
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt
+def _parse(iso: str) -> datetime | None:
+    try:
+        dt = datetime.fromisoformat(iso)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except (ValueError, TypeError):
+        return None
 
 
 def get_light_windows(sunrise_iso: str, sunset_iso: str) -> dict:
@@ -20,6 +23,8 @@ def get_light_windows(sunrise_iso: str, sunset_iso: str) -> dict:
     now     = datetime.now(timezone.utc)
     sunrise = _parse(sunrise_iso)
     sunset  = _parse(sunset_iso)
+    if not sunrise or not sunset:
+        return {"active": False, "label": None, "minutes_away": None}
 
     windows = [
         ("Morning blue hour",   sunrise - timedelta(minutes=60), sunrise - timedelta(minutes=30)),

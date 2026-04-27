@@ -72,21 +72,26 @@ async def get_forecast(lat: float, lon: float, dates: list[str]) -> list[dict]:
     except Exception:
         return []
 
-    daily    = data["daily"]
+    daily    = data.get("daily", {})
+    times    = daily.get("time", [])
     date_set = set(dates)
     result   = []
-    for i, d in enumerate(daily["time"]):
+    n        = len(times)
+    for i, d in enumerate(times):
         if d not in date_set:
             continue
-        code = daily["weather_code"][i]
+        def _get(key, default=None):
+            arr = daily.get(key, [])
+            return arr[i] if i < len(arr) else default
+        code = _get("weather_code", 0)
         result.append({
             "date":        d,
-            "temp_high_c": round(daily["temperature_2m_max"][i], 1),
-            "temp_low_c":  round(daily["temperature_2m_min"][i], 1),
+            "temp_high_c": round(_get("temperature_2m_max", 0), 1),
+            "temp_low_c":  round(_get("temperature_2m_min", 0), 1),
             "description": _WMO_DESCRIPTION.get(code, "Unknown"),
             "is_clear":    code in (0, 1, 2),
             "is_rainy":    code in (51, 53, 55, 61, 63, 65, 80, 81, 82, 95, 96, 99),
-            "sunrise_iso": daily["sunrise"][i],
-            "sunset_iso":  daily["sunset"][i],
+            "sunrise_iso": _get("sunrise", ""),
+            "sunset_iso":  _get("sunset", ""),
         })
     return result

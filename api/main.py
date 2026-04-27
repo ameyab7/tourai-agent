@@ -60,7 +60,7 @@ except ImportError:
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     from api.migrations import run_migrations
-    run_migrations(settings.database_url)
+    await asyncio.to_thread(run_migrations, settings.database_url)
     asyncio.create_task(cache_sweep_loop())
     yield
 

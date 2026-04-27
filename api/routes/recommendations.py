@@ -245,7 +245,8 @@ async def get_recommendations(
         profile_data = {}
     if isinstance(weather, Exception):
         logger.warning("weather_gather_exc", extra={"error": str(weather)})
-        raise HTTPException(status_code=503, detail="Weather service unavailable")
+        weather = {"description": "Unknown", "temperature_c": 0, "is_clear": False,
+                   "sunrise_iso": "", "sunset_iso": ""}
     if isinstance(raw_pois, Exception):
         logger.warning("pois_gather_exc", extra={"error": str(raw_pois)})
         raw_pois = []
@@ -271,12 +272,12 @@ async def get_recommendations(
         )
 
     user_interests: list[str] = profile_data.get("interests") or []
-    light = get_light_windows(weather["sunrise_iso"], weather["sunset_iso"])
+    light = get_light_windows(weather.get("sunrise_iso", ""), weather.get("sunset_iso", ""))
 
     conditions_summary = {
-        "weather":         weather["description"],
-        "temperature_c":   weather["temperature_c"],
-        "is_clear":        weather["is_clear"],
+        "weather":         weather.get("description", ""),
+        "temperature_c":   weather.get("temperature_c", 0),
+        "is_clear":        weather.get("is_clear", False),
         "light_window":    light["label"],
         "light_active":    light["active"],
         "light_mins_away": light["minutes_away"],
