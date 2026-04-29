@@ -158,6 +158,81 @@ The largest new surface in the PRD. A separate planning mode for multi-day trips
 
 ---
 
+### Phase 6.5 — Itinerary UX Redesign + Customer Trust Features
+**Status: 🔄 In progress**
+**Effort: ~2 weeks**
+
+Goal: transform the itinerary from a data dump into an experience that builds trust, creates excitement, and keeps users coming back. Every decision below is driven by a real customer pain point.
+
+**Customer problems being solved:**
+- "Did I miss something iconic?" — friends asking why they skipped the obvious spot
+- "I showed up and it was closed" — no opening hours awareness
+- "There was a 2-hour queue" — no crowd timing guidance
+- "It rained and our whole day was ruined" — no weather fallback
+- "The plan feels generic, not like me" — tips lack personality and insider context
+- "I felt overwhelmed looking at the results" — too much information at once
+
+---
+
+**A. Trust & Content Quality (Backend — `api/routes/itinerary_agent.py`)**
+- [x] Must-see highlights array — 2–3 iconic spots the model always includes regardless of interests (`highlights: [{name, why_cant_skip, emoji}]`)
+- [x] Crowd level per stop — `crowd_level: "low" | "medium" | "high"` based on day/time in schedule
+- [x] Best time to visit per stop — `best_time` string (e.g. "Before 9 AM to beat crowds")
+- [x] Opening hours note per stop — `opening_hours_note` (e.g. "Closed Mondays, open 10 AM – 6 PM")
+- [x] Skip-if-rushed flag — `skip_if_rushed: true` on one stop per day (never on must-sees)
+- [x] Rain backup plan per day — `rain_plan` string fallback for outdoor-heavy days
+- [x] Tip quality rule — tips must explain WHY a place matters, never generic descriptions
+- [x] Fast food ban — never recommend chains (McDonald's, KFC, Starbucks, etc.)
+- [ ] Real opening hours via Google Places API — replace model-estimated hours with live data
+- [ ] Crowd data via time-of-week heuristics — factor day-of-week + hour into crowd_level per stop
+
+**B. Results UI Redesign (Mobile — `mobile/app/(tabs)/plan.js`)**
+
+*Phase 1 — The Reveal (cinematic first impression):*
+- [x] Full-screen animated reveal card — destination name, trip tagline, dates, stats row (nights/places/meals), "Explore your trip" CTA
+- [x] Reveal overlay fades + slides in on plan arrival; fades out on CTA tap revealing the results underneath; "Skip" link for quick access
+
+*Phase 2 — Must-sees strip (the hook):*
+- [x] "Your friend will ask if you went here" dark card with horizontal highlights
+- [x] Each highlight tappable → finds which day contains that stop by name match and jumps to it
+
+*Phase 3 — Day tabs (eliminate scroll fatigue):*
+- [x] Sticky **Overview / Day 1 / Day 2 / Day 3** tab row below the header (horizontal ScrollView, scrollable if many days)
+- [x] Each tab shows only that day's content — users commit to one day at a time
+- [x] Active tab highlighted with indigo pill; inactive tabs grey
+- [x] Swipe left/right between days via `FlatList` with `pagingEnabled` — syncs tab indicator via `onMomentumScrollEnd`
+- [x] Overview tab contains: highlights, getting there, accommodation, budget, Live Walk CTA
+- [x] Day tabs use `DayTabContent` — stops always expanded (no collapse needed with single-day view), weather badge + rain plan at top
+- [x] `goToTab()` + `scrollToIndex()` for programmatic tab switching from highlight taps
+
+*Phase 4 — Timeline stop view (scannable at a glance):*
+- [x] Replace stop cards with a **vertical timeline** — coloured line on left, emoji dot, stop names
+- [x] Default: name + time + transit only (collapsed)
+- [x] Tap to expand: insider tip, crowd pill, best time, opening hours
+- [x] Long press: directions shortcut
+
+*Phase 5 — Progressive info disclosure:*
+- [x] Crowd level pill on each stop
+- [x] Opening hours note on each stop
+- [x] Skip-if-rushed badge
+- [x] Rain plan collapsible per day
+- [x] Budget + accommodation + getting there in Overview tab — not cluttering day views
+- [x] Opening hours + crowd collapsed by default; tap stop to reveal
+
+*Phase 6 — Contextual smart signals:*
+- [x] Sticky weather bar at top of each day (temp + condition icon, color-coded by condition)
+- [x] Rain plan banner auto-surfaces when `weather.is_clear === false` (not just on tap)
+- [x] "Running late?" button → dims non-skippable stops, highlights optional ones with banner
+
+*Phase 7 — Share & retention hook:*
+- [x] "Share your trip" — formatted text summary (destination, highlights, day-by-day) via native Share sheet
+- [x] Save trip to profile → Supabase `saved_trips` table insert via header button
+- [ ] "Your Trips" list on Profile tab (backend saved, UI pending)
+- [ ] Post-trip: "Rate your stops" prompt → feeds back into recommendation quality
+- [x] "I'm here now" button on each stop → navigates to Live Walk tab
+
+---
+
 ### Phase 7 — Map Enhancements
 **Status: NOT STARTED**
 **Effort: ~1 week**
@@ -230,6 +305,7 @@ The largest new surface in the PRD. A separate planning mode for multi-day trips
 | 4 | Home / Discover screen + mood check-in + GPS + Walk CTA | ✅ Complete |
 | 5 | Premium gate (RevenueCat) | ✅ Complete (mock mode) |
 | 6 | Trip Itinerary Generator | ✅ Complete |
+| 6.5 | Itinerary UX Redesign + Trust Features | 🔄 In progress (backend done, reveal + day tabs done, timeline view + share remaining) |
 | 7 | Map enhancements (golden hour, photos) | ⬜ Not started |
 | 8 | Astronomy / moon phase | ⬜ Not started |
 | 9 | Web platform (Next.js) | ⬜ Not started |

@@ -31,7 +31,7 @@ import {
 
 const STEP_DISTANCE_M  = 15;   // meters between each simulated GPS step
 const STEP_INTERVAL_MS = 12000; // milliseconds between steps (12s ≈ casual walking pace)
-const API_BASE         = 'https://tourai-agent-production.up.railway.app';
+import { API_BASE } from '../lib/config.js';
 
 // ---------------------------------------------------------------------------
 // Geo helpers

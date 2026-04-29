@@ -1,0 +1,140 @@
+[
+  {
+    "model": "qwen/qwen3-32b",
+    "trial": 1,
+    "tool_calls_in_first_response": true,
+    "tools_called_count": 7,
+    "expected_tools_called": [
+      "search_attractions",
+      "search_restaurants",
+      "search_hotels",
+      "get_weather_forecast"
+    ],
+    "missing_expected_tools": [],
+    "total_iterations": 2,
+    "wall_time_s": 2.3,
+    "prompt_tokens": 1447,
+    "completion_tokens": 729,
+    "total_tokens": 2176,
+    "json_valid": false,
+    "missing_fields": [],
+    "stops_per_day": 0.0,
+    "has_meals": false,
+    "error": "APIStatusError: Error code: 413 - {'error': {'message': 'Request too large for model `qwen/qwen3-32b` in organization `org_01kp4yjc0eemtb5hmsjrsaqe7b` service tier `on_demand` on tokens per minute (TPM): Limit 6000, Requested 7082, please reduce your message size and try again. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing', 'type': 'tokens', 'code': 'rate_limit_exceeded'}}"
+  },
+  {
+    "model": "qwen/qwen3-32b",
+    "trial": 2,
+    "tool_calls_in_first_response": true,
+    "tools_called_count": 7,
+    "expected_tools_called": [
+      "search_attractions",
+      "get_weather_forecast",
+      "search_restaurants",
+      "search_hotels"
+    ],
+    "missing_expected_tools": [],
+    "total_iterations": 2,
+    "wall_time_s": 59.5,
+    "prompt_tokens": 1447,
+    "completion_tokens": 1221,
+    "total_tokens": 2668,
+    "json_valid": false,
+    "missing_fields": [],
+    "stops_per_day": 0.0,
+    "has_meals": false,
+    "error": "APIStatusError: Error code: 413 - {'error': {'message': 'Request too large for model `qwen/qwen3-32b` in organization `org_01kp4yjc0eemtb5hmsjrsaqe7b` service tier `on_demand` on tokens per minute (TPM): Limit 6000, Requested 7112, please reduce your message size and try again. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing', 'type': 'tokens', 'code': 'rate_limit_exceeded'}}"
+  },
+  {
+    "model": "qwen/qwen3-32b",
+    "trial": 3,
+    "tool_calls_in_first_response": true,
+    "tools_called_count": 7,
+    "expected_tools_called": [
+      "search_attractions",
+      "get_weather_forecast",
+      "search_restaurants",
+      "search_hotels"
+    ],
+    "missing_expected_tools": [],
+    "total_iterations": 2,
+    "wall_time_s": 12.8,
+    "prompt_tokens": 1447,
+    "completion_tokens": 938,
+    "total_tokens": 2385,
+    "json_valid": false,
+    "missing_fields": [],
+    "stops_per_day": 0.0,
+    "has_meals": false,
+    "error": "APIStatusError: Error code: 413 - {'error': {'message': 'Request too large for model `qwen/qwen3-32b` in organization `org_01kp4yjc0eemtb5hmsjrsaqe7b` service tier `on_demand` on tokens per minute (TPM): Limit 6000, Requested 7058, please reduce your message size and try again. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing', 'type': 'tokens', 'code': 'rate_limit_exceeded'}}"
+  },
+  {
+    "model": "llama-3.3-70b-versatile",
+    "trial": 1,
+    "tool_calls_in_first_response": true,
+    "tools_called_count": 7,
+    "expected_tools_called": [
+      "search_attractions",
+      "get_weather_forecast",
+      "search_restaurants",
+      "search_hotels"
+    ],
+    "missing_expected_tools": [],
+    "total_iterations": 2,
+    "wall_time_s": 6.7,
+    "prompt_tokens": 4147,
+    "completion_tokens": 2044,
+    "total_tokens": 6191,
+    "json_valid": true,
+    "missing_fields": [],
+    "stops_per_day": 3.3,
+    "has_meals": true,
+    "error": null
+  },
+  {
+    "model": "llama-3.3-70b-versatile",
+    "trial": 2,
+    "tool_calls_in_first_response": true,
+    "tools_called_count": 7,
+    "expected_tools_called": [
+      "search_attractions",
+      "get_weather_forecast",
+      "search_restaurants",
+      "search_hotels"
+    ],
+    "missing_expected_tools": [],
+    "total_iterations": 2,
+    "wall_time_s": 30.6,
+    "prompt_tokens": 4147,
+    "completion_tokens": 1869,
+    "total_tokens": 6016,
+    "json_valid": true,
+    "missing_fields": [],
+    "stops_per_day": 3.0,
+    "has_meals": true,
+    "error": null
+  },
+  {
+    "model": "llama-3.3-70b-versatile",
+    "trial": 3,
+    "tool_calls_in_first_response": true,
+    "tools_called_count": 7,
+    "expected_tools_called": [
+      "search_attractions",
+      "get_weather_forecast",
+      "search_restaurants",
+      "search_hotels"
+    ],
+    "missing_expected_tools": [],
+    "total_iterations": 2,
+    "wall_time_s": 23.9,
+    "prompt_tokens": 4147,
+    "completion_tokens": 1903,
+    "total_tokens": 6050,
+    "json_valid": true,
+    "missing_fields": [],
+    "stops_per_day": 3.0,
+    "has_meals": false,
+    "error": null
+  }
+]

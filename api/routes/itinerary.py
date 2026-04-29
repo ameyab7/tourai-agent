@@ -20,10 +20,15 @@ logger = logging.getLogger("tourai.api")
 # Overpass POI fetch for destination area
 # ---------------------------------------------------------------------------
 
-async def _fetch_pois(lat: float, lon: float, radius_m: int = 5000) -> list[dict]:
+async def _fetch_pois(lat: float, lon: float, interests: list[str]) -> list[dict]:
     from utils.geoapify_places import fetch_pois
-    from api.config import settings
-    return await fetch_pois(lat, lon, radius_m, settings.geoapify_api_key, limit=60)
+    from utils.poi_ranker import rank_pois
+    pois = await fetch_pois(lat, lon, 5000, settings.geoapify_api_key, limit=60)
+    food_types = {"restaurant", "cafe", "bar", "pub", "fast_food"}
+    food       = [p for p in pois if p["poi_type"] in food_types][:8]
+    attractions = [p for p in pois if p["poi_type"] not in food_types]
+    ranked     = rank_pois(attractions, interests, lat, lon, limit=20, max_per_type=3)
+    return ranked + food
 
 
 # ---------------------------------------------------------------------------
@@ -88,41 +93,26 @@ def _build_prompt(
         for p in pois[:40]
     )
 
-    json_schema = json.dumps({
-        "title": "Weekend in Austin",
-        "summary": "Two days of live music, tacos, and trails",
-        "days": [
-            {
-                "date": start_date,
-                "day_label": "Day 1 — Arrival & First Impressions",
-                "stops": [
-                    {
-                        "name": "Barton Springs Pool",
-                        "poi_type": "leisure",
-                        "tip": "A spring-fed pool beloved by locals — arrive before 9 AM to beat the crowds.",
-                        "arrival_time": "9:00 AM",
-                        "duration_min": 90,
-                        "drive_from_prev_min": 0,
-                    }
-                ],
-            }
-        ],
-    }, indent=2)
-
     stops_per_day = {"relaxed": 2, "balanced": 3, "packed": 4}.get(pace, 3)
 
     return f"""Destination: {destination}
 Dates: {start_date} to {end_date} ({num_days} day{"s" if num_days > 1 else ""})
-Travel style: {travel_style}
-Pace: {pace} ({stops_per_day} stops/day)
-Max drive between stops: {drive_tolerance_hrs} hours
+Travel style: {travel_style} | Pace: {pace} ({stops_per_day} stops/day) | Max drive: {drive_tolerance_hrs}h
 Interests: {', '.join(interests) if interests else 'general sightseeing'}
 
-Nearby attractions to choose from:
+Nearby attractions:
 {poi_lines if poi_lines else '(No specific POIs found — use your knowledge of the destination)'}
 
-Return JSON matching this exact structure (as many days as needed, {stops_per_day} stops per day):
-{json_schema}"""
+Return JSON with this structure — {stops_per_day} stops per day, as many days as needed:
+{{"title":str, "summary":str, "days":[{{"date":str, "day_label":str, "stops":[{{"name":str, "poi_type":str, "tip":str, "arrival_time":str, "duration_min":int, "drive_from_prev_min":int}}]}}]}}"""
+
+
+def _coerce_int(val, default: int) -> int:
+    """Return val as int, stripping any trailing non-numeric chars (e.g. '60 min' → 60)."""
+    try:
+        return int(str(val).split()[0])
+    except (ValueError, TypeError, IndexError):
+        return default
 
 
 def _parse_itinerary_json(text: str) -> dict:
@@ -153,15 +143,11 @@ async def _generate_itinerary(prompt: str) -> dict:
 # ---------------------------------------------------------------------------
 
 def _apply_drive_splitting(days: list[dict], tolerance_hrs: float) -> list[dict]:
-    """Insert overnight-stop notes when a drive leg exceeds tolerance."""
     tolerance_min = tolerance_hrs * 60
     for day in days:
         for stop in day.get("stops", []):
             if stop.get("drive_from_prev_min", 0) > tolerance_min:
-                stop["tip"] = (
-                    f"[Long drive — consider an overnight stop en route] "
-                    + stop.get("tip", "")
-                ).strip()
+                stop["overnight_warning"] = True
     return days
 
 
@@ -185,16 +171,17 @@ async def generate_itinerary(
     lat, lon = geo["lat"], geo["lon"]
     display  = geo["display_name"].split(",")[0].strip()
 
-    # 2. Fetch POIs
-    pois = await _fetch_pois(lat, lon)
-    logger.info("itinerary_pois_fetched", extra={"destination": body.destination, "count": len(pois)})
+    # 2. Merge profile prefs (request body overrides profile)
+    profile   = await asyncio.to_thread(_get_user_profile, authorization)
+    p         = profile or {}
+    interests = body.interests or p.get("interests") or []
+    style     = body.travel_style or p.get("travel_style") or "solo"
+    pace      = body.pace or p.get("pace") or "balanced"
+    drive_tol = body.drive_tolerance_hrs if body.drive_tolerance_hrs is not None else float(p.get("drive_tolerance_hrs") or 2.0)
 
-    # 3. Merge profile prefs (request body overrides profile)
-    profile   = _get_user_profile(authorization)
-    interests = body.interests or (profile or {}).get("interests") or []
-    style     = body.travel_style or (profile or {}).get("travel_style") or "solo"
-    pace      = body.pace or (profile or {}).get("pace") or "balanced"
-    drive_tol = body.drive_tolerance_hrs if body.drive_tolerance_hrs != 2.0 else float((profile or {}).get("drive_tolerance_hrs") or 2.0)
+    # 3. Fetch POIs ranked by interests
+    pois = await _fetch_pois(lat, lon, interests)
+    logger.info("itinerary_pois_fetched", extra={"destination": body.destination, "count": len(pois)})
 
     # 4. Build prompt and generate
     prompt = _build_prompt(body.destination, body.start_date, body.end_date, pois, interests, style, pace, drive_tol)
@@ -220,8 +207,8 @@ async def generate_itinerary(
                         poi_type=s.get("poi_type", "place"),
                         tip=s.get("tip", ""),
                         arrival_time=s.get("arrival_time", ""),
-                        duration_min=int(s.get("duration_min", 60)),
-                        drive_from_prev_min=int(s.get("drive_from_prev_min", 0)),
+                        duration_min=_coerce_int(s.get("duration_min"), 60),
+                        drive_from_prev_min=_coerce_int(s.get("drive_from_prev_min"), 0),
                     )
                     for s in d.get("stops", [])
                 ],

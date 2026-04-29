@@ -1,167 +1,41 @@
-"""api/routes/itinerary_agent.py — Pre-fetch + single reasoning-model call.
+"""api/routes/itinerary_agent.py — Skeleton-first itinerary pipeline.
 
 Architecture:
-  All data (attractions, restaurants, hotels, weather, golden hour) is fetched
-  server-side in parallel with asyncio.gather — no LLM needed for that.
-  One call to gpt-oss-120b gives it everything and it reasons through the plan.
-
-  Flow:
-    Step 1 — parallel pre-fetch (free, ~2-3 s)
-    Step 2 — single deepseek-r1 call with all data in context → JSON plan
+  Stage 1 — parallel pre-fetch via prefetch.orchestrator (free, ~2-3 s)
+  Stage 2 — deterministic skeleton via solver.skeleton (spatial clustering,
+             nearest-neighbour TSP, clock layout) — no LLM, no tokens
+  Stage 3 — single Cerebras call for narration only (tips, crowd, hours,
+             restaurant names) — LLM does language, not scheduling
 """
 
 import asyncio
 import json
 import logging
-import re
 import traceback
+import uuid
 from datetime import date, timedelta
 from urllib.parse import quote_plus
 
-import httpx
 from fastapi import APIRouter, Header
 from fastapi.responses import StreamingResponse
 
 from api.config import settings
 from api.models import ItineraryRequest
-from utils.geoapify_places import _PLACES_URL
+from narration.narrator import narrate_all
+from prefetch.orchestrator import PrefetchBundle, get_http_client, prefetch_all
+from solver.scorer import score_pois
+from solver.skeleton import Skeleton, build_skeleton
+from validation.validator import assemble_and_validate
 
 router = APIRouter()
 logger = logging.getLogger("tourai.api")
 
-MODEL = "llama-3.3-70b-versatile"
-
-
-# ── Server-side pre-fetch functions ──────────────────────────────────────────
-
-async def _fetch_attractions(lat: float, lon: float, interests: list[str]) -> list:
-    from utils.geoapify_places import fetch_pois
-    from utils.poi_ranker import rank_pois
-    pois = await fetch_pois(lat, lon, 6000, settings.geoapify_api_key, limit=50)
-    food_types = {"restaurant", "cafe", "bar", "pub", "fast_food"}
-    attractions = [p for p in pois if p["poi_type"] not in food_types]
-    ranked = rank_pois(attractions, interests, lat, lon, limit=10, max_per_type=3)
-    return [
-        {"name": p["name"], "poi_type": p["poi_type"], "lat": p["lat"], "lon": p["lon"]}
-        for p in ranked
-    ]
-
-
-async def _fetch_restaurants(lat: float, lon: float) -> list:
-    FOOD_CATS = "catering.restaurant,catering.cafe,catering.bar,catering.pub,catering.fast_food"
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(
-                _PLACES_URL,
-                params={
-                    "categories": FOOD_CATS,
-                    "filter": f"circle:{lon},{lat},3000",
-                    "limit": 10,
-                    "apiKey": settings.geoapify_api_key,
-                },
-            )
-            resp.raise_for_status()
-        results = []
-        for f in resp.json().get("features", []):
-            p = f.get("properties", {})
-            name = p.get("name", "").strip()
-            if not name:
-                continue
-            results.append({
-                "name": name,
-                "cuisine": p.get("datasource", {}).get("raw", {}).get("cuisine", ""),
-            })
-        return results[:8]
-    except Exception as exc:
-        logger.warning("prefetch_restaurants_failed", extra={"error": str(exc)})
-        return []
-
-
-async def _fetch_hotels(lat: float, lon: float) -> list:
-    HOTEL_CATS = "accommodation.hotel,accommodation.guest_house,accommodation.hostel,accommodation.motel"
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(
-                _PLACES_URL,
-                params={
-                    "categories": HOTEL_CATS,
-                    "filter": f"circle:{lon},{lat},4000",
-                    "limit": 8,
-                    "apiKey": settings.geoapify_api_key,
-                },
-            )
-            resp.raise_for_status()
-        results = []
-        for f in resp.json().get("features", []):
-            p = f.get("properties", {})
-            name = p.get("name", "").strip()
-            if not name:
-                continue
-            coords = f.get("geometry", {}).get("coordinates", [])
-            results.append({
-                "name": name,
-                "stars": p.get("datasource", {}).get("raw", {}).get("stars", ""),
-                "lat": coords[1] if len(coords) >= 2 else lat,
-                "lon": coords[0] if len(coords) >= 2 else lon,
-            })
-        return results[:8]
-    except Exception as exc:
-        logger.warning("prefetch_hotels_failed", extra={"error": str(exc)})
-        return []
-
-
-async def _fetch_weather(lat: float, lon: float, dates: list[str]) -> list:
-    try:
-        from utils.weather import get_forecast
-        return await get_forecast(lat, lon, dates)
-    except Exception as exc:
-        logger.warning("prefetch_weather_failed", extra={"error": str(exc)})
-        return []
-
-
-async def _prefetch_all(lat: float, lon: float, dates: list[str], interests: list[str]) -> dict:
-    """Fetch all data sources in parallel — replaces the agent's first tool-calling iteration."""
-    attractions, restaurants, hotels, weather = await asyncio.gather(
-        _fetch_attractions(lat, lon, interests),
-        _fetch_restaurants(lat, lon),
-        _fetch_hotels(lat, lon),
-        _fetch_weather(lat, lon, dates),
-        return_exceptions=True,
-    )
-
-    def _safe(val, default):
-        return default if isinstance(val, Exception) else val
-
-    data = {
-        "attractions": _safe(attractions, []),
-        "restaurants": _safe(restaurants, []),
-        "hotels":      _safe(hotels, []),
-        "weather":     _safe(weather, []),
-    }
-
-    # Compute golden hour from weather data — no extra API call needed
-    if "photography" in interests and data["weather"]:
-        from utils.golden_hour import get_light_windows
-        data["golden_hour"] = [
-            {"date": w.get("date", ""), **get_light_windows(w.get("sunrise_iso", ""), w.get("sunset_iso", ""))}
-            for w in data["weather"]
-            if w.get("sunrise_iso") and w.get("sunset_iso")
-        ]
-
-    logger.info("prefetch_complete", extra={
-        "attractions": len(data["attractions"]),
-        "restaurants": len(data["restaurants"]),
-        "hotels":      len(data["hotels"]),
-        "weather_days": len(data["weather"]),
-    })
-    return data
-
-
-# ── System prompt ─────────────────────────────────────────────────────────────
+# ── Legacy planning prompt (kept for reference) ───────────────────────────────
 
 def _build_system_prompt(interests: list[str], pace: str, style: str, drive_tol_hrs: float) -> str:
     stops_per_day = {"relaxed": "2–3", "balanced": "3–4", "packed": "4–5"}.get(pace, "3–4")
-    return f"""You are TourAI, an expert AI travel agent. You have been given real-time data about the destination — use it to build a complete, personalised trip plan covering accommodation, getting there, meals, transit between every stop, and a realistic budget.
+    return f"""/no_think
+You are TourAI, an expert AI travel agent and local insider. Build a complete, trustworthy trip plan that makes the traveller feel like they have a knowledgeable local friend guiding them — not a generic tourist package.
 
 Traveller profile:
   Interests: {', '.join(interests) if interests else 'general sightseeing'}
@@ -169,23 +43,54 @@ Traveller profile:
   Travelling as: {style}
   Max drive between stops: {drive_tol_hrs} hours
 
-Planning rules:
+── MUST-SEE RULE ──
+Include a "highlights" array of 2–3 iconic, unmissable spots for the destination — places that locals would say "you absolutely have to go." Include these in the day stops too, even if they don't perfectly match stated interests. These are the places a friend back home will ask about.
+
+── PLANNING RULES ──
 - Every day must include breakfast, lunch, and dinner stops (is_meal: true)
-- Schedule outdoor/photography spots on clear days; museums/galleries on rainy days
-- transit_from_prev.mode: "arrive" for first stop, "walk" ≤15 min, "uber" 15–30 min, "drive" >30 min
+- Never recommend global fast-food chains (McDonald's, Burger King, KFC, Starbucks, Subway, etc.) — always local restaurants, neighbourhood cafés, or bakeries
+- Schedule outdoor/photography spots on clear days; pivot to museums/galleries/indoor on rainy days
 - Cluster stops geographically to minimise travel time
+- transit_from_prev.mode: "arrive" for first stop, "walk" ≤15 min, "uber" 15–30 min, "drive" >30 min
 - Hotel check-in is the first stop on Day 1 (arrival_time: "2:00 PM", poi_type: "accommodation")
 - Hotel check-out is the last stop on the final day (arrival_time: "11:00 AM")
-- Use only places from the provided data where possible; supplement with your knowledge for meals
-- Write tips with insider knowledge, not Wikipedia summaries
+
+── TIP QUALITY ──
+Tips must answer WHY this place matters — the story, the history, what makes it special to locals, the one thing to look for. Never generic descriptions. One sentence of real insider knowledge beats three sentences of Wikipedia.
+
+── CROWD & TIMING ──
+For every non-meal stop set best_time (e.g. "Before 9 AM to beat crowds", "Sunset for the best light") and crowd_level ("low", "medium", or "high" — based on time of day and day of week in the itinerary).
+
+── OPENING HOURS ──
+For every non-meal stop set opening_hours_note (e.g. "Open Tue–Sun 10 AM–6 PM, closed Mondays" or "Open 24/7"). Flag any stop that is commonly closed on the scheduled day.
+
+── SKIP IF RUSHED ──
+Mark skip_if_rushed: true on 1 stop per day — the one to drop if they're running late. Never mark must-see highlights as skippable.
+
+── RAIN BACKUP ──
+Every day must have a rain_plan — a 1-sentence fallback ("If it rains: head to [indoor alternative] instead of the outdoor stops").
+
+── BUDGET REALISM ──
+Budget estimates must be realistic for the destination and travel style. Include a budget_notes field with honest caveats (e.g. "Entrance fees add up fast — book online to skip queues and save 10%").
 
 Respond with ONLY a ```json code block containing:
-title, summary, getting_there(notes,drive_time_min,drive_distance_km,flights_url),
-accommodation(recommended_area,area_reason,booking_url,options:[name,tier,est_price_usd_per_night]),
-budget(accommodation_usd,food_usd,activities_usd,transport_usd,total_usd,notes),
-days:[date,day_label,weather(description,temp_high_c,temp_low_c,is_clear),
-stops:[name,poi_type,tip,arrival_time,duration_min,is_meal,lat,lon,
-transit_from_prev(mode,duration_min,notes)]]"""
+{{
+  title, summary,
+  highlights: [{{name, why_cant_skip, emoji}}],
+  getting_there: {{notes, drive_time_min, drive_distance_km, flights_url}},
+  accommodation: {{recommended_area, area_reason, booking_url, options: [{{name, tier, est_price_usd_per_night}}]}},
+  budget: {{accommodation_usd, food_usd, activities_usd, transport_usd, total_usd, notes}},
+  days: [{{
+    date, day_label,
+    weather: {{description, temp_high_c, temp_low_c, is_clear}},
+    rain_plan,
+    stops: [{{
+      name, poi_type, tip, arrival_time, duration_min, is_meal, lat, lon,
+      best_time, crowd_level, opening_hours_note, skip_if_rushed,
+      transit_from_prev: {{mode, duration_min, notes}}
+    }}]
+  }}]
+}}"""
 
 
 # ── SSE helper ────────────────────────────────────────────────────────────────
@@ -194,39 +99,12 @@ def _sse(payload: dict) -> str:
     return f"data: {json.dumps(payload)}\n\n"
 
 
-# ── Planner call ──────────────────────────────────────────────────────────────
-
-async def _call_planner(system: str, user_msg: str) -> str:
-    """Single streaming call to gpt-oss-120b. Returns full response content."""
-    from groq import AsyncGroq
-    client = AsyncGroq(api_key=settings.groq_api_key)
-
-    stream = await client.chat.completions.create(
-        model=MODEL,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user",   "content": user_msg},
-        ],
-        temperature=0.4,
-        max_tokens=4000,
-        stream=True,
-    )
-
-    content = ""
-    async for chunk in stream:
-        choice = chunk.choices[0] if chunk.choices else None
-        if choice and choice.delta.content:
-            content += choice.delta.content
-
-    return content
 
 
 # ── Main generator ────────────────────────────────────────────────────────────
 
 async def _run_planner(
-    destination: str,
-    lat: float,
-    lon: float,
+    bundle: PrefetchBundle,
     start_date: str,
     end_date: str,
     interests: list[str],
@@ -234,6 +112,10 @@ async def _run_planner(
     pace: str,
     drive_tol: float,
 ):
+    destination = bundle.display_name
+    req_id = uuid.uuid4().hex[:8]
+    logger.info("planner_request_start", extra={"req_id": req_id, "destination": destination})
+
     flights_url = f"https://www.google.com/travel/flights?q=Flights+to+{quote_plus(destination)}"
     booking_url = (
         f"https://www.booking.com/search.html?ss={quote_plus(destination)}"
@@ -245,103 +127,47 @@ async def _run_planner(
     dates = [(d0 + timedelta(days=i)).isoformat() for i in range((d1 - d0).days + 1)]
 
     yield _sse({"type": "start", "message": f"Planning your trip to {destination}…"})
-
-    # ── Step 1: parallel pre-fetch (free, no LLM) ──────────────────────────
-    yield _sse({"type": "step", "tool": "prefetch", "message": "Gathering local data…"})
-
-    data = await _prefetch_all(lat, lon, dates, interests)
-
     yield _sse({"type": "result", "tool": "prefetch", "message": (
-        f"Found {len(data['attractions'])} attractions · "
-        f"{len(data['restaurants'])} restaurants · "
-        f"{len(data['hotels'])} hotels"
+        f"Found {len(bundle.attractions)} attractions · "
+        f"{len(bundle.restaurants)} restaurants · "
+        f"{len(bundle.hotels)} hotels"
     )})
 
-    # ── Step 2: single reasoning call ──────────────────────────────────────
-    yield _sse({"type": "step", "tool": "finalize_plan", "message": "Putting it all together…"})
+    # ── Stage 2: score POIs (fast Cerebras call) + build skeleton ──────────
+    # score_pois runs concurrently while we emit the step message; if it
+    # times out or fails, build_skeleton falls back to the keyword heuristic.
+    yield _sse({"type": "step", "tool": "score_pois", "message": "Matching attractions to your interests…"})
+    poi_scores = await score_pois(bundle.attractions, interests)
+    if poi_scores:
+        logger.info("scorer_used", extra={"req_id": req_id, "scored": len(poi_scores)})
+    else:
+        logger.info("scorer_fallback_heuristic", extra={"req_id": req_id})
 
-    weather_summary = "\n".join(
-        f"  {w.get('date','?')}: {w.get('description','?')} · {w.get('temp_high_c','?')}°C high / {w.get('temp_low_c','?')}°C low · {'clear' if w.get('is_clear') else 'not clear'}"
-        for w in data["weather"]
-    ) or "  Weather data unavailable"
+    skeleton = build_skeleton(bundle, start_date, end_date, interests, pace, drive_tol, poi_scores=poi_scores or None)
+    logger.info("skeleton_complete", extra={
+        "req_id": req_id, **skeleton.diagnostics,
+    })
+    yield _sse({"type": "step", "tool": "narrate", "message": "Writing your trip narrative…"})
 
-    golden_section = ""
-    if "golden_hour" in data:
-        golden_section = "\nGolden hour windows:\n" + "\n".join(
-            f"  {g['date']}: {g.get('label','?')} · active={g.get('active')} · mins_away={g.get('minutes_away')}"
-            for g in data["golden_hour"]
-        )
-
-    user_msg = f"""Plan a trip to {destination}.
-Dates: {start_date} to {end_date} ({len(dates)} day{'s' if len(dates) > 1 else ''})
-Coordinates: lat={lat}, lon={lon}
-Interests: {', '.join(interests) if interests else 'general sightseeing'}
-Flights URL: {flights_url}
-Booking URL: {booking_url}
-
---- LIVE DATA ---
-
-Attractions nearby:
-{json.dumps(data['attractions'])}
-
-Restaurants nearby:
-{json.dumps(data['restaurants'])}
-
-Hotels nearby:
-{json.dumps(data['hotels'])}
-
-Weather forecast:
-{weather_summary}
-{golden_section}"""
-
-    system = _build_system_prompt(interests, pace, style, drive_tol)
-
+    # ── Stage 3: parallel narration (Groq — one call per day + one trip-level) ─
     try:
-        content = await _call_planner(system, user_msg)
+        trip_narration, day_narrations = await narrate_all(
+            destination, interests, style, skeleton, bundle
+        )
+        plan = await assemble_and_validate(
+            destination, start_date, end_date, interests,
+            skeleton, trip_narration, day_narrations, bundle,
+        )
     except Exception as exc:
-        logger.error("planner_call_failed", extra={"error": str(exc)})
-        yield _sse({"type": "error", "message": "Planning failed. Please try again."})
+        logger.error("narration_failed", extra={"req_id": req_id, "error": str(exc)})
+        yield _sse({"type": "error", "message": "Narration failed. Please try again."})
         return
 
-    # Strip <think>...</think> reasoning block before parsing
-    content_clean = re.sub(r"<think>[\s\S]*?</think>", "", content).strip()
-
-    plan = None
-
-    # 1. Prefer a fully closed ```json ... ``` block
-    match = re.search(r"```json\s*([\s\S]*?)\s*```", content_clean)
-    if match:
-        try:
-            plan = json.loads(match.group(1))
-        except json.JSONDecodeError:
-            pass
-
-    # 2. Truncated response — grab everything after ```json and parse what we have
-    if plan is None:
-        open_match = re.search(r"```json\s*([\s\S]*)", content_clean)
-        if open_match:
-            try:
-                plan = json.loads(open_match.group(1).strip())
-            except json.JSONDecodeError:
-                pass
-
-    # 3. Raw JSON with no code fence
-    if plan is None:
-        try:
-            plan = json.loads(content_clean)
-        except Exception:
-            pass
-
-    if plan:
-        plan.setdefault("getting_there", {}).setdefault("flights_url", flights_url)
-        plan.setdefault("accommodation", {}).setdefault("booking_url", booking_url)
-        plan["destination"] = destination
-        plan["start_date"]  = start_date
-        plan["end_date"]    = end_date
-        yield _sse({"type": "complete", "plan": plan})
-    else:
-        logger.error("plan_parse_failed", extra={"content_preview": content[:300]})
-        yield _sse({"type": "error", "message": "Could not parse the plan. Please try again."})
+    logger.info("plan_built", extra={"req_id": req_id, "days": len(plan.days)})
+    plan_dict = plan.model_dump()
+    plan_dict["getting_there"] = {"flights_url": flights_url}
+    plan_dict["accommodation"]["booking_url"] = booking_url
+    yield _sse({"type": "complete", "plan": plan_dict})
 
 
 # ── Endpoint ──────────────────────────────────────────────────────────────────
@@ -352,49 +178,55 @@ async def stream_itinerary(
     authorization: str | None = Header(default=None),
 ):
     interests = list(body.interests)
-    style     = body.travel_style or "solo"
-    pace      = body.pace or "balanced"
+    style     = body.travel_style
+    pace      = body.pace
     drive_tol = body.drive_tolerance_hrs
 
     if authorization and authorization.startswith("Bearer "):
         try:
             from api.supabase_client import get_supabase
             token = authorization.removeprefix("Bearer ").strip()
-            user  = get_supabase().auth.get_user(token).user
-            if user:
+
+            def _load_profile() -> dict | None:
+                sb   = get_supabase()
+                user = sb.auth.get_user(token).user
+                if not user:
+                    return None
                 result = (
-                    get_supabase()
-                    .table("profiles")
+                    sb.table("profiles")
                     .select("interests,travel_style,pace,drive_tolerance_hrs")
                     .eq("user_id", str(user.id))
                     .execute()
                 )
-                if result.data:
-                    p = result.data[0]
-                    if not interests:      interests = p.get("interests") or []
-                    if style == "solo":    style     = p.get("travel_style") or "solo"
-                    if pace == "balanced": pace      = p.get("pace") or "balanced"
+                return result.data[0] if result.data else None
+
+            p = await asyncio.to_thread(_load_profile)
+            if p:
+                if not interests:     interests = p.get("interests") or []
+                if style is None:     style     = p.get("travel_style")
+                if pace is None:      pace      = p.get("pace")
+                if drive_tol is None: drive_tol = p.get("drive_tolerance_hrs")
         except Exception as exc:
             logger.warning("profile_load_failed", extra={"error": str(exc)})
 
-    from utils.google_places import geocode_destination
-    geo = await geocode_destination(body.destination, api_key=settings.geoapify_api_key)
-    if not geo:
+    # Apply hardcoded defaults only after profile merge — never override explicit user input
+    if style is None:    style     = "solo"
+    if pace is None:     pace      = "balanced"
+    if drive_tol is None: drive_tol = 2.0
+
+    d0    = date.fromisoformat(body.start_date)
+    d1    = date.fromisoformat(body.end_date)
+    dates = [(d0 + timedelta(days=i)).isoformat() for i in range((d1 - d0).days + 1)]
+
+    bundle = await prefetch_all(body.destination, dates, interests, settings.geoapify_api_key)
+    if bundle is None:
         async def _err():
             yield _sse({"type": "error", "message": f"Could not find destination: {body.destination!r}"})
         return StreamingResponse(_err(), media_type="text/event-stream")
 
-    lat  = geo.get("lat")
-    lon  = geo.get("lon")
-    if lat is None or lon is None:
-        async def _err():
-            yield _sse({"type": "error", "message": f"Could not geocode destination: {body.destination!r}"})
-        return StreamingResponse(_err(), media_type="text/event-stream")
-    dest = (geo.get("display_name") or body.destination).split(",")[0].strip()
-
     async def _stream():
         try:
-            async for chunk in _run_planner(dest, lat, lon, body.start_date, body.end_date,
+            async for chunk in _run_planner(bundle, body.start_date, body.end_date,
                                             interests, style, pace, drive_tol):
                 yield chunk
         except Exception:

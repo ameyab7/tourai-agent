@@ -1,6 +1,6 @@
 """api/models.py — Pydantic request / response models."""
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -168,7 +168,7 @@ class ItineraryRequest(BaseModel):
     interests:           list[str] = []
     travel_style:        str | None = None
     pace:                str | None = None
-    drive_tolerance_hrs: float      = 2.0
+    drive_tolerance_hrs: float | None = None
 
 
 class ItineraryStop(BaseModel):
@@ -178,6 +178,7 @@ class ItineraryStop(BaseModel):
     arrival_time:        str
     duration_min:        int
     drive_from_prev_min: int
+    overnight_warning:   bool = False
 
 
 class ItineraryDay(BaseModel):
@@ -194,3 +195,11 @@ class ItineraryResponse(BaseModel):
     end_date:       str
     days:           list[ItineraryDay]
     correlation_id: str
+
+
+class ReplanRequest(BaseModel):
+    reason:          Literal["bad_weather", "running_late", "tired", "place_closed", "free_text"]
+    day_index:       int
+    from_stop_index: int | None = None
+    free_text:       str | None = Field(None, max_length=500)
+    closed_poi_ids:  list[str] = []

@@ -28,7 +28,7 @@ import SimUserMarker from '../../dev/SimUserMarker';
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
-const API_BASE         = 'https://tourai-agent-production.up.railway.app';
+import { API_BASE } from '../../lib/config.js';
 const POLL_INTERVAL_MS = 5000;
 const DEFAULT_RADIUS   = 500;
 const MIN_MOVE_M       = 8;

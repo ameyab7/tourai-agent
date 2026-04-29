@@ -5,7 +5,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 
-const API_BASE = 'https://tourai-agent-production.up.railway.app';
+import { API_BASE } from '../../lib/config.js';
 
 async function getOrCreateDeviceId() {
   let id = await AsyncStorage.getItem('device_id');
