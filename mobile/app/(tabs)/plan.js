@@ -812,6 +812,7 @@ export default function PlanScreen() {
   const [agentSteps,     setAgentSteps]     = useState([]);
   const [streaming,      setStreaming]      = useState(false);
   const [plan,           setPlan]           = useState(null);
+  const [planId,         setPlanId]         = useState(null);
   const [showReveal,     setShowReveal]     = useState(false);
   const [activeDay,      setActiveDay]      = useState(0);
   const [error,          setError]          = useState(null);
@@ -894,7 +895,7 @@ export default function PlanScreen() {
     xhrRef.current = xhr;
     let cursor = 0, lineBuffer = '';
 
-    xhr.open('POST', `${API_BASE}/v1/itinerary/stream`);
+    xhr.open('POST', `${API_BASE}/v2/itinerary/stream`);
     xhr.setRequestHeader('Content-Type', 'application/json');
     if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
 
@@ -902,10 +903,10 @@ export default function PlanScreen() {
       if (!line.startsWith('data: ')) return;
       try {
         const event = JSON.parse(line.slice(6));
-        if (['start','step','result'].includes(event.type)) {
+        if (['stage','start','step','result'].includes(event.type)) {
           setAgentSteps(prev => [...prev, event.message]);
         } else if (event.type === 'complete') {
-          setPlan(event.plan); setStreaming(false); setShowReveal(true);
+          setPlan(event.plan); setPlanId(event.plan_id); setStreaming(false); setShowReveal(true);
         } else if (event.type === 'error') {
           setError(event.message); setStreaming(false);
         }

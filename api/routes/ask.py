@@ -13,7 +13,7 @@ from api.models import AskRequest, AskResponse
 
 import os
 if os.environ.get("GEOAPIFY_API_KEY"):
-    from utils import geoapify as poi_source
+    from utils import geoapify_buildings as poi_source
 else:
     from utils import overpass as poi_source  # type: ignore[no-redef]
 
@@ -46,9 +46,9 @@ async def ask(body: AskRequest) -> AskResponse:
                 {"name": p["name"], "type": p.get("poi_type", "unknown"), "distance_m": 0}
                 for p in raw_pois[:8]
             ]
-            logger.info("ask_poi_fallback", extra={"fetched": len(nearby)})
+            logger.info(f"No POI context in request — fetched {len(nearby)} nearby POIs from live data")
         except Exception:
-            logger.warning("ask_poi_fallback_failed")
+            logger.warning("Live POI fallback failed — answering without location context")
 
     if nearby:
         poi_lines = "\n".join(
@@ -78,16 +78,13 @@ async def ask(body: AskRequest) -> AskResponse:
             )
         answer = completion.choices[0].message.content.strip()
     except Exception:
-        logger.error("ask_error", extra={"exc": traceback.format_exc()})
+        logger.error("Ask endpoint error — returning 502 to client", extra={"exc": traceback.format_exc()})
         metrics.errors_total.labels(endpoint="/v1/ask", error_type="groq").inc()
         raise HTTPException(status_code=502, detail="Could not generate an answer right now.")
 
-    logger.info("ask_answered", extra={
-        "lat":         round(body.latitude, 5),
-        "lon":         round(body.longitude, 5),
-        "question":    body.question,
-        "answer":      answer,
-        "nearby_pois": [p.get("name") for p in body.context.get("nearby_pois", [])],
-        "elapsed_ms":  round((time.perf_counter() - t0) * 1000),
-    })
+    elapsed_ms = round((time.perf_counter() - t0) * 1000)
+    logger.info(
+        f"Answered in {elapsed_ms}ms at ({round(body.latitude, 5)}, {round(body.longitude, 5)}) "
+        f"| Q: {body.question!r} → {answer!r}"
+    )
     return AskResponse(answer=answer, question=body.question, correlation_id=cid)

@@ -60,7 +60,7 @@ async def post_feedback(body: FeedbackRequest) -> FeedbackResponse:
             user_street  = body.user_street,
         )
     except Exception:
-        logger.error("feedback_diagnosis_error", extra={"exc": traceback.format_exc()})
+        logger.error("Visibility diagnosis failed — returning 500", extra={"exc": traceback.format_exc()})
         raise HTTPException(status_code=500, detail="Diagnosis failed — check server logs")
 
     # Did the filter already agree with the user?
@@ -91,17 +91,11 @@ async def post_feedback(body: FeedbackRequest) -> FeedbackResponse:
     except Exception:
         pass  # ephemeral filesystem — not a problem, in-memory store is the source of truth
 
-    logger.info("feedback_received", extra={
-        "poi_name":      body.poi_name,
-        "user_says":     body.user_says,
-        "filter_says":   trace["filter_now_says"],
-        "agreement":     agreement,
-        "rule":          trace["rule"],
-        "size":          trace.get("size", ""),
-        "distance_m":    trace["distance_m"],
-        "angle_deg":     trace["angle_deg"],
-        "already_fixed": already_fixed,
-    })
+    logger.info(
+        f"Feedback received for {body.poi_name!r} — "
+        f"user says {body.user_says!r}, filter says {trace['filter_now_says']!r} "
+        f"[{agreement}, rule={trace['rule']}, dist={trace['distance_m']}m, angle={trace['angle_deg']}°]"
+    )
 
     diagnosis = FeedbackDiagnosis(**trace, already_fixed=already_fixed, agreement=agreement)
     return FeedbackResponse(

@@ -106,7 +106,7 @@ async def get_story(body: StoryRequest, authorization: str | None = Header(defau
 
     # 1. Persistent cache hit
     if cached := await cache.get(s_key):
-        logger.info("story_cache_hit", extra={"poi": body.poi_name})
+        logger.info(f"Story for {body.poi_name!r} served from cache")
         return StoryResponse(poi_id=body.poi_id, story=cached, cached=True, correlation_id=cid)
 
     # 2. Another request is already generating this story — await the same future
@@ -128,14 +128,11 @@ async def get_story(body: StoryRequest, authorization: str | None = Header(defau
         fut.set_result(story)
     except Exception:
         fut.set_exception(Exception("story generation failed"))
-        logger.error("story_error", extra={"exc": traceback.format_exc(), "poi": body.poi_name})
+        logger.error(f"Story generation failed for {body.poi_name!r} — returning 502", extra={"exc": traceback.format_exc()})
         metrics.errors_total.labels(endpoint="/v1/story", error_type="groq").inc()
         raise HTTPException(status_code=502, detail="Could not generate story right now.")
     finally:
         _story_inflight.pop(s_key, None)
 
-    logger.info("story_generated", extra={
-        "poi":        body.poi_name,
-        "elapsed_ms": round((time.perf_counter() - t0) * 1000),
-    })
+    logger.info(f"Generated story for {body.poi_name!r} in {round((time.perf_counter() - t0) * 1000)}ms")
     return StoryResponse(poi_id=body.poi_id, story=story, cached=False, correlation_id=cid)

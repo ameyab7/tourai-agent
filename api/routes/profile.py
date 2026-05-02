@@ -41,15 +41,11 @@ async def setup_profile(
 
     sb.table("profiles").upsert(payload, on_conflict="user_id").execute()
 
-    logger.info("profile_setup", extra={
-        "user_id":      str(user.id),
-        "device_id":    body.device_id,
-        "interests":    body.interests,
-        "travel_style": body.travel_style,
-        "pace":         body.pace,
-        "drive_hrs":    body.drive_tolerance_hrs,
-        "action":       "updated" if exists else "created",
-    })
+    action = "updated" if exists else "created"
+    logger.info(
+        f"User profile {action} for {user.id} — "
+        f"interests={body.interests}, style={body.travel_style}, pace={body.pace}, drive={body.drive_tolerance_hrs}h"
+    )
 
     return ProfileSetupResponse(
         status    = "updated" if exists else "created",

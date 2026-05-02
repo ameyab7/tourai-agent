@@ -47,7 +47,7 @@ def _available_mirrors() -> list[str]:
 
 def _cool_mirror(url: str) -> None:
     _mirror_backoff[url] = time.monotonic() + _MIRROR_COOLDOWN
-    logger.warning("overpass_mirror_cooled", extra={"mirror": url, "cooldown_s": _MIRROR_COOLDOWN})
+    logger.warning(f"Overpass mirror {url} put on cooldown for {_MIRROR_COOLDOWN}s after an error")
 
 
 # ---------------------------------------------------------------------------
@@ -156,7 +156,7 @@ def _parse(elements: list[dict]) -> list[dict]:
             "poi_type": _poi_type(tags),
             "geometry": geometry,
         })
-    logger.debug("overpass_parsed", extra={"pois": len(pois), "elements": len(elements)})
+    logger.debug(f"Parsed {len(pois)} POIs from {len(elements)} Overpass elements")
     return pois
 
 
@@ -216,7 +216,7 @@ async def search_nearby(
     ck     = _cache_key(lat, lon)
     cached = _cache.get(ck)
     if cached and (time.monotonic() - cached["ts"]) < _CACHE_TTL:
-        logger.debug("overpass_cache_hit")
+        logger.debug("Overpass cache hit — returning cached POI list")
         return cached["pois"]
 
     await _acquire_slot()
@@ -234,8 +234,8 @@ async def search_nearby(
             use_query  = fallback if is_last else query
 
             logger.info(
-                "overpass_attempt",
-                extra={"attempt": attempt + 1, "mirror": url, "fallback": is_last},
+                f"Overpass attempt {attempt + 1}/{max_attempts} via {url}"
+                + (" (fallback query)" if is_last else "")
             )
 
             try:
@@ -244,7 +244,7 @@ async def search_nearby(
                 if resp.status_code == 429:
                     _cool_mirror(url)
                     wait = 30 + attempt * 10
-                    logger.warning("overpass_rate_limited", extra={"wait_s": wait})
+                    logger.warning(f"Overpass rate limited (429) on {url} — waiting {wait}s before retry")
                     await asyncio.sleep(wait)
                     continue
 
@@ -257,30 +257,29 @@ async def search_nearby(
                 resp.raise_for_status()
                 pois = _parse(resp.json().get("elements", []))
                 _cache[ck] = {"pois": pois, "ts": time.monotonic()}
-                logger.info("overpass_success", extra={"attempt": attempt + 1, "pois": len(pois)})
+                logger.info(f"Overpass returned {len(pois)} POIs on attempt {attempt + 1} via {url}")
                 return pois
 
             except httpx.TimeoutException:
                 _cool_mirror(url)
-                logger.warning("overpass_timeout", extra={"attempt": attempt + 1, "mirror": url})
+                logger.warning(f"Overpass request timed out on attempt {attempt + 1} via {url}")
             except httpx.ConnectError:
                 # localhost not running — cool it permanently for this process lifetime
                 _mirror_backoff[url] = time.monotonic() + 3600
-                logger.info("overpass_mirror_unreachable", extra={"mirror": url})
+                logger.info(f"Overpass mirror {url} is unreachable — skipping for this session")
             except httpx.HTTPStatusError as e:
                 if e.response.status_code < 500:
                     return []   # 4xx — bad query, no point retrying
-                logger.warning("overpass_http_error",
-                               extra={"status": e.response.status_code, "attempt": attempt + 1})
+                logger.warning(f"Overpass returned HTTP {e.response.status_code} on attempt {attempt + 1}")
             except Exception as e:
-                logger.warning("overpass_error", extra={"error": str(e), "attempt": attempt + 1})
+                logger.warning(f"Overpass request error on attempt {attempt + 1} — {e}")
 
             if not is_last:
                 backoff = min(2 ** attempt, 16)   # 1s, 2s, 4s, 8s — capped at 16s
-                logger.info("overpass_backoff", extra={"wait_s": backoff})
+                logger.info(f"Overpass backing off {backoff}s before next attempt")
                 await asyncio.sleep(backoff)
 
-    logger.warning("overpass_all_failed", extra={"lat": lat, "lon": lon})
+    logger.warning(f"All Overpass mirrors failed for ({lat}, {lon}) — returning empty POI list")
     return []
 
 
@@ -338,7 +337,7 @@ async def fetch_obstacle_buildings(
     ck     = _obstacle_cache_key(lat, lon)
     cached = _obstacle_cache.get(ck)
     if cached and (time.monotonic() - cached["ts"]) < _OBSTACLE_CACHE_TTL:
-        logger.debug("obstacle_cache_hit", extra={"key": ck, "count": len(cached["buildings"])})
+        logger.debug(f"Obstacle building cache hit — {len(cached['buildings'])} buildings cached for this area")
         return cached["buildings"]
 
     await _acquire_slot()
@@ -363,8 +362,7 @@ async def fetch_obstacle_buildings(
                     continue
                 if resp.status_code >= 400:
                     # Don't abort — 406 from one mirror may be transient; try the next
-                    logger.warning("obstacle_buildings_http_error",
-                                   extra={"status": resp.status_code, "mirror": mirror})
+                    logger.warning(f"Obstacle building fetch returned HTTP {resp.status_code} from {mirror}")
                     continue
 
                 elements = resp.json().get("elements", [])
@@ -391,29 +389,23 @@ async def fetch_obstacle_buildings(
                     buildings[way_id] = (name, polygon)
 
                 _obstacle_cache[ck] = {"buildings": buildings, "ts": time.monotonic()}
+                with_polygon = sum(1 for _, g in buildings.values() if g is not None)
                 logger.info(
-                    "obstacle_buildings_fetched",
-                    extra={
-                        "lat":    round(lat, 4),
-                        "lon":    round(lon, 4),
-                        "mirror": mirror,
-                        "total":  len(elements),
-                        "with_polygon": sum(1 for _, g in buildings.values() if g is not None),
-                    },
+                    f"Fetched {len(buildings)} obstacle building polygons from {mirror} "
+                    f"at ({round(lat, 4)}, {round(lon, 4)}) — {with_polygon} have polygon geometry"
                 )
                 return buildings
 
             except httpx.TimeoutException:
                 _cool_mirror(mirror)
-                logger.warning("obstacle_buildings_timeout", extra={"mirror": mirror})
+                logger.warning(f"Obstacle building fetch timed out on {mirror}")
             except httpx.ConnectError:
                 _mirror_backoff[mirror] = time.monotonic() + 3600
-                logger.info("obstacle_buildings_mirror_unreachable", extra={"mirror": mirror})
+                logger.info(f"Obstacle building mirror {mirror} is unreachable — trying next")
             except Exception as e:
-                logger.warning("obstacle_buildings_error",
-                               extra={"mirror": mirror, "error": str(e)})
+                logger.warning(f"Obstacle building fetch error on {mirror} — {e}")
 
-    logger.warning("obstacle_buildings_all_failed", extra={"lat": lat, "lon": lon})
+    logger.warning(f"All Overpass mirrors failed for obstacle buildings at ({lat}, {lon})")
     return {}
 
 
@@ -470,9 +462,9 @@ async def search_tall_buildings(
                         "poi_type": "building",
                         "geometry": [],
                     })
-                logger.info("overpass_tall_buildings", extra={"count": len(pois), "mirror": mirror})
+                logger.info(f"Fetched {len(pois)} tall buildings from Overpass via {mirror}")
                 return pois
             except Exception as e:
-                logger.warning("overpass_tall_buildings_error", extra={"mirror": mirror, "error": str(e)})
+                logger.warning(f"Tall buildings fetch failed on {mirror} — {e}")
 
     return []

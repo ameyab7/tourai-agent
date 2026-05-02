@@ -13,31 +13,57 @@ Why a separate stage:
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import re
 
-import httpx
+from groq import AsyncGroq
 
 from api.config import settings
 
 logger = logging.getLogger("tourai.scorer")
 
-_CEREBRAS_BASE = "https://api.cerebras.ai/v1"
-_SCORER_MODEL = "qwen-3-32b"  # small, fast, cheap; swap to whatever Cerebras has
+_SCORER_MODEL = "openai/gpt-oss-120b"
 
 _SCORER_SYSTEM = """You are scoring travel attractions for a specific traveller.
 
 Given a list of attractions and the traveller's interests, return a JSON object
 mapping each poi_id to a score from 0.0 (irrelevant) to 1.0 (perfect match).
 
-Rules:
-- Iconic must-see landmarks score >= 0.7 even if they don't match interests directly
-- Strong interest match scores 0.8 - 1.0
-- Weak match scores 0.3 - 0.5
-- Tourist traps that match no interests score 0.0 - 0.2
-- Return ONLY a JSON object: {"a0": 0.85, "a1": 0.4, ...}
+── SCORING RULES ──
+- Iconic unmissable landmarks (Eiffel Tower, Grand Canyon, Colosseum, etc.) score >= 0.75 regardless of interests
+- Strong interest match → 0.8–1.0
+- Partial or loose interest match → 0.5–0.7
+- Unrelated but decent attraction → 0.3–0.5
+- Generic chain, tourist trap, or irrelevant → 0.0–0.2
+- Use the full 0.0–1.0 range — do NOT cluster scores around 0.5
+
+── INTEREST → POI TYPE MAPPINGS ──
+Use these to inform scoring when the interest matches the type:
+  photography   → viewpoint, rooftop, canyon, bridge, waterfront, park, monument
+  history       → museum, monument, castle, ruins, historic_site, cathedral
+  art           → gallery, museum, street_art, sculpture, theatre
+  nature        → park, trail, beach, garden, waterfall, nature_reserve
+  food          → market, food_hall, restaurant (local, not chains), cafe
+  architecture  → cathedral, castle, bridge, monument, historic_building
+  hiking        → trail, park, viewpoint, nature_reserve, beach
+  nightlife     → bar, rooftop, entertainment, live_music
+  wellness      → spa, park, garden, yoga_studio
+
+── FEW-SHOT EXAMPLES ──
+Traveller interests: photography, nature
+  "Golden Gate Bridge" (viewpoint)     → 0.95  # iconic + perfect interest match
+  "Muir Woods" (trail)                 → 0.88  # strong nature + photography
+  "SFMOMA" (museum)                    → 0.35  # art museum, weak match
+  "Westfield Mall" (shopping)          → 0.05  # irrelevant
+
+Traveller interests: history, architecture
+  "Colosseum" (monument)               → 0.98  # iconic + perfect match
+  "Vatican Museums" (museum)           → 0.90  # strong history match
+  "Trastevere neighbourhood" (park)    → 0.45  # interesting but loose match
+  "McDonald's" (restaurant)            → 0.02  # irrelevant chain
+
+Return ONLY a JSON object: {"a0": 0.85, "a1": 0.4, ...}
 """
 
 
@@ -50,9 +76,16 @@ async def score_pois(
     if not attractions:
         return {}
 
-    # Compact representation — we only need name + type for the LLM
     poi_list = [
-        {"id": p["poi_id"], "name": p["name"], "type": p["poi_type"]}
+        {
+            "id":   p["poi_id"],
+            "name": p["name"],
+            "type": p["poi_type"],
+            "tags": {k: v for k, v in p.get("tags", {}).items()
+                     if k in {"cuisine", "historic", "outdoor_seating", "natural",
+                               "tourism", "sport", "leisure", "artwork_type",
+                               "architectural_style", "access"}},
+        }
         for p in attractions
     ]
     user_msg = (
@@ -60,29 +93,22 @@ async def score_pois(
         f"Attractions:\n{json.dumps(poi_list, ensure_ascii=False)}"
     )
 
-    payload = {
-        "model": _SCORER_MODEL,
-        "messages": [
-            {"role": "system", "content": _SCORER_SYSTEM},
-            {"role": "user", "content": user_msg},
-        ],
-        "temperature": 0.2,
-        "max_tokens": 800,
-        "response_format": {"type": "json_object"},
-    }
-    headers = {"Authorization": f"Bearer {settings.cerebras_api_key}"}
-
     try:
-        async with httpx.AsyncClient(timeout=timeout_s) as client:
-            resp = await client.post(
-                f"{_CEREBRAS_BASE}/chat/completions",
-                headers=headers,
-                json=payload,
-            )
-            resp.raise_for_status()
-            content = resp.json()["choices"][0]["message"]["content"]
-    except (httpx.HTTPError, asyncio.TimeoutError, KeyError) as exc:
-        logger.warning("scorer_failed", extra={"error": str(exc)})
+        client = AsyncGroq(api_key=settings.groq_api_key)
+        resp = await client.chat.completions.create(
+            model=_SCORER_MODEL,
+            messages=[
+                {"role": "system", "content": _SCORER_SYSTEM},
+                {"role": "user", "content": user_msg},
+            ],
+            temperature=0.2,
+            max_tokens=800,
+            response_format={"type": "json_object"},
+            timeout=timeout_s,
+        )
+        content = resp.choices[0].message.content
+    except Exception as exc:
+        logger.warning(f"POI scorer call failed — falling back to keyword heuristic: {exc}")
         return {}
 
     # Strip code fences if present, then parse
@@ -90,7 +116,7 @@ async def score_pois(
     try:
         raw = json.loads(content)
     except json.JSONDecodeError as exc:
-        logger.warning("scorer_parse_failed", extra={"error": str(exc), "content": content[:200]})
+        logger.warning(f"POI scorer returned invalid JSON — falling back to keyword heuristic: {exc} | content: {content[:200]}")
         return {}
 
     # Coerce defensively — model might return strings, ints, or floats
@@ -101,5 +127,5 @@ async def score_pois(
         except (TypeError, ValueError):
             continue
 
-    logger.info("scorer_complete", extra={"scored": len(scores), "total": len(attractions)})
+    logger.info(f"Scored {len(scores)}/{len(attractions)} attractions against user interests")
     return scores

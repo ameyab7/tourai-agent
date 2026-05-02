@@ -34,7 +34,7 @@ async def geocode_destination(destination: str, api_key: str = "") -> dict[str, 
                         "type":         r.get("result_type", ""),
                     }
         except Exception as exc:
-            logger.warning("geoapify_geocode_failed", extra={"destination": destination, "error": str(exc)})
+            logger.warning(f"Geoapify geocode failed for {destination!r} — {exc}")
 
     # 2. Nominatim fallback
     try:
@@ -55,7 +55,7 @@ async def geocode_destination(destination: str, api_key: str = "") -> dict[str, 
                     "type":         r.get("type", ""),
                 }
     except Exception as exc:
-        logger.warning("nominatim_geocode_failed", extra={"destination": destination, "error": str(exc)})
+        logger.warning(f"Nominatim geocode failed for {destination!r} — {exc}")
 
     return None
 
@@ -88,7 +88,7 @@ async def search_destinations(query: str, limit: int = 5) -> list[dict[str, Any]
                 for r in results
             ]
     except Exception as exc:
-        logger.warning("search_destinations_failed", extra={"query": query, "error": str(exc)})
+        logger.warning(f"Destination search failed for query {query!r} — {exc}")
         return []
 
 
@@ -123,5 +123,5 @@ async def get_place_photo_url(
                 f"&photo_reference={photo_ref}&key={api_key}"
             )
     except Exception as exc:
-        logger.warning("places_photo_failed", extra={"place": place_name, "error": str(exc)})
+        logger.warning(f"Google Places photo lookup failed for {place_name!r} — {exc}")
         return None

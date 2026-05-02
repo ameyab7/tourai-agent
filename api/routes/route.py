@@ -45,20 +45,17 @@ async def get_route(
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(_GEOAPIFY_ROUTING, params=params)
         if resp.status_code != 200:
-            logger.error("geoapify_routing_http_error", extra={
-                "status": resp.status_code,
-                "body":   resp.text[:500],
-            })
+            logger.error(f"Geoapify routing returned HTTP {resp.status_code} — {resp.text[:200]}")
             raise HTTPException(status_code=502, detail=f"Routing service returned {resp.status_code}: {resp.text[:200]}")
         resp.raise_for_status()
         data = resp.json()
     except HTTPException:
         raise
     except httpx.TimeoutException:
-        logger.warning("geoapify_routing_timeout")
+        logger.warning("Geoapify routing request timed out — returning 504")
         raise HTTPException(status_code=504, detail="Routing service timed out")
     except Exception as exc:
-        logger.error("geoapify_routing_error", extra={"err": str(exc)})
+        logger.error(f"Geoapify routing error — {exc}")
         raise HTTPException(status_code=502, detail=f"Routing service error: {exc}")
 
     # Geoapify GeoJSON: features[0].geometry.coordinates = [[lon,lat],...]

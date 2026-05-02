@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import * as Location from 'expo-location';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
 import {
   ActivityIndicator, Animated, Dimensions, FlatList,
   Modal, Pressable, RefreshControl, ScrollView,
@@ -171,21 +172,28 @@ export default function HomeScreen() {
         const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
         loc = { lat: pos.coords.latitude, lon: pos.coords.longitude };
         setLocation(loc);
+      } else {
+        setLocation(null);
       }
 
-      if (savedMood && savedDate === todayStr()) {
-        setMood(savedMood);
-        // Mood already known — fetch immediately without waiting for mood state to propagate
-        fetchRecommendations(false, savedMood, loc);
+      const moodToUse = savedMood && savedDate === todayStr() ? savedMood : null;
+      if (moodToUse) {
+        setMood(moodToUse);
+        // Call directly with resolved values — avoids double-fire from the mood useEffect
+        fetchRecommendations(false, moodToUse, loc);
       } else {
         setShowSheet(true);
       }
     })();
   }, []);
 
-  // Fetch after mood is selected from the sheet
+  // Only fetch here when mood changes via the sheet — NOT on initial mount restore
+  const prevMoodRef = useRef(null);
   useEffect(() => {
-    if (mood && location !== undefined) fetchRecommendations(false, mood, location);
+    if (mood && mood !== prevMoodRef.current && location !== undefined) {
+      prevMoodRef.current = mood;
+      fetchRecommendations(false, mood, location);
+    }
   }, [mood]);
 
   const fetchRecommendations = useCallback(async (isRefresh = false, currentMood = mood, currentLoc = location) => {
@@ -202,8 +210,12 @@ export default function HomeScreen() {
       }
       if (!session) { setError('Not signed in'); return; }
 
-      const lat = currentLoc?.lat ?? 37.7749;
-      const lon = currentLoc?.lon ?? -122.4194;
+      if (!currentLoc) {
+        setError('Location not available. Please enable location permissions and try again.');
+        return;
+      }
+      const lat = currentLoc.lat;
+      const lon = currentLoc.lon;
 
       const res = await fetch(`${API_BASE}/v1/recommendations`, {
         method:  'POST',
@@ -230,6 +242,17 @@ export default function HomeScreen() {
       setRefreshing(false);
     }
   }, [mood]);
+
+  // Refresh GPS each time the user comes back to this tab
+  useFocusEffect(useCallback(() => {
+    (async () => {
+      const { status } = await Location.getForegroundPermissionsAsync();
+      if (status !== 'granted') return;
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const loc = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+      setLocation(loc);
+    })();
+  }, []));
 
   const handleMoodSelect = async (selectedMood) => {
     setShowSheet(false);

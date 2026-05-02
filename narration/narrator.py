@@ -27,7 +27,8 @@ from solver.skeleton import Skeleton, SkeletonDay
 
 logger = logging.getLogger("tourai.narration")
 
-_NARRATION_MODEL = "llama-3.3-70b-versatile"
+_NARRATION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
+_REPLAN_MODEL    = "llama-3.3-70b-versatile"
 
 
 # ── Per-day prompt ────────────────────────────────────────────────────────────
@@ -35,32 +36,75 @@ _NARRATION_MODEL = "llama-3.3-70b-versatile"
 _DAY_SYSTEM = """You are TourAI, a knowledgeable local friend writing one day of a trip.
 
 Your job is to add warm, specific commentary to a pre-planned day. The schedule
-is already decided — DO NOT change times, durations, or which places are visited.
-Only add prose: tips, picks for meal stops, a day label, and a rain backup.
+is already fixed — DO NOT change times, durations, or which places are visited.
+Output only: tips, meal picks, a day label, rain backup, crowd levels, best times, opening hours.
 
-Rules for tips:
-- Answer WHY this place matters — story, history, what locals love
-- One sentence of insider knowledge beats three sentences of Wikipedia
-- Never generic ("a beautiful park") — always specific ("the bench under the
-  third cypress tree has the best skyline view at sunset")
+── TIP RULES ──
+Write tips like a local friend texting you before you leave — specific, surprising, actionable.
+NEVER describe what a place is. NEVER use tourist-brochure language.
+Tell the traveller what to DO, what to NOTICE, or what most people MISS.
 
-Rules for meal picks:
-- You will be given a list of nearby restaurants
-- Pick the most fitting option for each meal slot in this day
-- Never pick global chains (McDonald's, Starbucks, etc.)
-- Match the cuisine to the day's vibe
+Good tips (copy this register exactly):
+  ✓ "Skip the main entrance queue — the side gate on Via della Croce opens 15 min early and is always empty."
+  ✓ "Stand on the east terrace exactly at 5 PM — the light hits the canyon wall and turns it deep red for about 8 minutes."
+  ✓ "The basement level has the oldest mosaics and almost no one goes down there."
+  ✓ "Ask for a table by the kitchen pass — you can watch the chefs work and they always send out extra courses."
+  ✓ "The gift shop sells a fold-out map of the hidden courtyards that isn't available anywhere else."
 
-Return ONLY valid JSON, no markdown.
+Bad tips (never write like this):
+  ✗ "A stunning example of baroque architecture with a rich history dating back to the 17th century."
+  ✗ "Visitors will enjoy the impressive views and vibrant local atmosphere."
+  ✗ "This iconic landmark is a must-see for anyone visiting the city."
+  ✗ "A great place to relax and take in the scenery."
+
+── CROWD LEVEL RULES ──
+Set crowd_level to "low", "medium", or "high" using this logic:
+  - Weekday (Mon–Thu) before 10 AM or after 4 PM → low
+  - Weekday midday (10 AM–2 PM) → medium
+  - Friday or weekend morning → medium
+  - Friday or weekend afternoon (12 PM–5 PM) → high
+  - Famous landmarks (museums, cathedrals, main squares) → bump one level higher
+
+── BEST TIME RULES ──
+Be specific. Not "morning" — "before 9 AM" or "just after opening".
+Reference light conditions, crowd patterns, or temperature when relevant.
+Examples: "Golden hour (about 45 min before sunset)", "Right at opening — crowds arrive by 10 AM",
+"Midweek afternoon — tour groups are gone by 3 PM"
+
+── OPENING HOURS RULES ──
+Use your world knowledge. Be specific: "Open Tue–Sun 10 AM–6 PM, closed Mondays" not "check before visiting".
+If you are genuinely uncertain for a specific location, write "Verify hours before visiting".
+
+── MEAL RULES ──
+- Pick only from the provided restaurant list
+- Never pick global chains (McDonald's, Starbucks, KFC, etc.)
+- Match the cuisine to the day's neighbourhood and vibe
+- Meal tip: one specific dish, drink, or ordering trick — never "the food is great"
+
+Return ONLY valid JSON matching the schema. No markdown, no commentary outside the JSON.
 """
 
 _DAY_OUTPUT_SCHEMA = """{
-  "day_label": "Day 1 — Arrival & First Impressions",
-  "rain_plan": "If it rains: head to [indoor alternative] instead of the outdoor stops",
+  "day_label": "Day 1 — The Strip and Downtown",
+  "rain_plan": "If it rains: swap the outdoor walk for the Mob Museum — it's two blocks away and takes 2 hours",
   "stops": [
-    {"poi_id": "a0", "tip": "...", "best_time": "Before 9 AM to beat crowds", "crowd_level": "low"},
-    {"poi_id": "meal-lunch-2026-05-01", "name": "Pizzeria da Michele", "tip": "..."}
+    {
+      "poi_id": "a0",
+      "tip": "Go straight to the observation deck before 9 AM — the Strip looks completely different before the crowds arrive and the light is perfect for photos.",
+      "best_time": "Before 9 AM for empty floors and morning light",
+      "crowd_level": "low",
+      "opening_hours_note": "Open daily 9 AM–9 PM, last entry 8:30 PM"
+    },
+    {
+      "poi_id": "meal-dinner-2026-05-01",
+      "name": "Lotus of Siam",
+      "tip": "Order the Northern Thai menu — it's printed separately and most people never see it. The khao soi is the best in the city."
+    }
   ]
 }"""
+
+
+_WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 
 def _build_day_prompt(
@@ -69,19 +113,30 @@ def _build_day_prompt(
     bundle: PrefetchBundle,
     interests: list[str],
 ) -> str:
+    # Build a tag lookup from the bundle so we can enrich each stop
+    tag_lookup: dict[str, dict] = {
+        p["poi_id"]: p.get("tags", {}) for p in bundle.attractions
+    }
+
     schedule = []
     for s in day.stops:
         item: dict = {
-            "poi_id": s.poi_id,
-            "name": s.name,
-            "type": s.poi_type,
-            "time": s.arrival_time,
+            "poi_id":       s.poi_id,
+            "name":         s.name,
+            "type":         s.poi_type,
+            "time":         s.arrival_time,
             "duration_min": s.duration_min,
         }
         if s.is_meal:
             item["needs"] = "meal_pick"
-            item["meal"] = s.poi_id.split("-")[1]  # breakfast/lunch/dinner
+            item["meal"]  = s.poi_id.split("-")[1]
+        else:
+            tags = tag_lookup.get(s.poi_id, {})
+            if tags:
+                item["tags"] = tags
         schedule.append(item)
+
+    weekday = _WEEKDAY_NAMES[day.weekday] if 0 <= day.weekday <= 6 else "Unknown"
 
     weather_line = (
         f"Weather: {bundle.weather[day_index].get('description', '?')} "
@@ -92,51 +147,82 @@ def _build_day_prompt(
 
     restaurants_compact = [
         {"name": r["name"], "cuisine": r.get("cuisine", "")}
-        for r in bundle.restaurants[:8]
+        for r in bundle.restaurants[:12]
     ]
 
     return f"""Day {day_index + 1} of the trip.
-Date: {day.date}
+Date: {day.date} ({weekday})
 {weather_line}
 Traveller interests: {', '.join(interests) if interests else 'general sightseeing'}
 
-Schedule (FIXED — do not change):
+Schedule (FIXED — do not change stops, times, or durations):
 {json.dumps(schedule, ensure_ascii=False, indent=2)}
 
-Nearby restaurants to choose from for meal slots:
+Restaurants available for meal slots (pick from this list only):
 {json.dumps(restaurants_compact, ensure_ascii=False, indent=2)}
 
-Return JSON matching this schema:
+Return JSON matching this schema exactly:
 {_DAY_OUTPUT_SCHEMA}
 
-For EVERY stop in the schedule above, include a stops entry with the same poi_id.
-For meal stops, also include a 'name' field with the chosen restaurant."""
+Rules:
+- Include EVERY stop from the schedule above — one entry per poi_id.
+- For meal stops: include "name" (chosen restaurant) and "tip" only.
+- For activity stops: include "tip", "best_time", "crowd_level", and "opening_hours_note".
+- Use the weekday ({weekday}) and each stop's time to set crowd_level correctly."""
 
 
 # ── Trip-level prompt ─────────────────────────────────────────────────────────
 
 _TRIP_SYSTEM = """You are TourAI, writing the high-level overview for a trip.
 
-You'll see the full schedule. Write the title, summary, must-see highlights,
-accommodation reasoning, and budget notes. Warm, specific, never generic.
+You'll see the full schedule. Your job: title, summary, 2-3 highlights, hotel reasoning, and a realistic budget.
+
+── TITLE RULES ──
+Make it specific and evocative — reference the actual stops, cuisine, or mood of THIS trip.
+Good: "Three Days of Neon, Buffets and Desert Drives in Las Vegas"
+Good: "A Long Weekend Eating and Walking Through Lisbon's Seven Hills"
+Bad:  "An Amazing Trip to Las Vegas"
+Bad:  "Exploring the Best of Paris"
+
+── SUMMARY RULES ──
+One sentence. What is the emotional arc of this trip? What will the traveller remember?
+Reference actual stops or themes from the schedule — not generic city descriptions.
+
+── WHY_CANT_SKIP RULES ──
+This is the ONE thing a friend back home will ask about. Make it visceral and specific.
+Good: "The light through the stained glass at 11 AM turns the whole nave gold — nothing else in the city comes close."
+Good: "You can see four states from the rim and the silence is genuinely startling after the casino noise."
+Bad:  "An iconic landmark with historical significance that every visitor should experience."
+Bad:  "A must-see attraction that represents the best of what the city has to offer."
+
+── BUDGET RULES ──
+Base estimates on the destination's real cost of living.
+Las Vegas, NYC, Paris → expensive tier. Lisbon, Mexico City, Bangkok → budget-friendly.
+accommodation_usd = realistic nightly rate × number of nights
+food_usd = meals per day × cost per meal × days (vary by destination)
+notes = one honest caveat specific to this destination ("Resort fees in Vegas add $40-60/night on top of the room rate")
 
 Return ONLY valid JSON, no markdown.
 """
 
 _TRIP_OUTPUT_SCHEMA = """{
-  "title": "Three Days of Tacos and Trails in Austin",
-  "summary": "A laid-back long weekend mixing live music, breakfast tacos, and Hill Country views",
+  "title": "Three Days of Neon, Buffets and Desert Drives in Las Vegas",
+  "summary": "A long weekend that swings between casino floors, roadside geology and some of the best Thai food in America.",
   "highlights": [
-    {"name": "Barton Springs Pool", "why_cant_skip": "...", "emoji": "🌊"}
+    {
+      "name": "The Neon Museum",
+      "why_cant_skip": "The boneyard at dusk turns into something genuinely surreal — 200 dead signs lit up against a desert sky. Nothing else in Vegas feels this quiet or this strange.",
+      "emoji": "🌟"
+    }
   ],
-  "accommodation_reason": "South Congress puts you walking distance to the food trucks and a short Uber from downtown shows.",
+  "accommodation_reason": "The Golden Gate puts you at the walkable end of Fremont Street — you can reach the Neon Museum on foot and avoid paying for Uber every night.",
   "budget": {
-    "accommodation_usd": 450,
-    "food_usd": 240,
-    "activities_usd": 80,
-    "transport_usd": 60,
-    "total_usd": 830,
-    "notes": "Music venue covers add up — buy tickets in advance to skip walk-up surcharges."
+    "accommodation_usd": 420,
+    "food_usd": 280,
+    "activities_usd": 120,
+    "transport_usd": 80,
+    "total_usd": 900,
+    "notes": "Resort fees add $35-55/night on top of the listed room rate — factor this in when booking. The Neon Museum sells out; book online in advance."
   }
 }"""
 
@@ -169,28 +255,28 @@ The highlights array must include 2-3 of the most iconic stops from the overview
 
 # ── LLM call helper ───────────────────────────────────────────────────────────
 
-async def _call_groq(system: str, user: str, max_tokens: int, label: str) -> dict | None:
+async def _call_groq(system: str, user: str, max_tokens: int, label: str, model: str = _NARRATION_MODEL, temperature: float = 0.3) -> dict | None:
     client = AsyncGroq(api_key=settings.groq_api_key)
     try:
         resp = await client.chat.completions.create(
-            model=_NARRATION_MODEL,
+            model=model,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            temperature=0.7,
+            temperature=temperature,
             max_tokens=max_tokens,
             response_format={"type": "json_object"},
         )
         content = resp.choices[0].message.content
         if resp.choices[0].finish_reason == "length":
-            logger.warning("narration_truncated", extra={"label": label, "tokens": max_tokens})
+            logger.warning(f"Narration for {label!r} was cut off at {max_tokens} tokens — response may be incomplete")
         return json.loads(content)
     except json.JSONDecodeError as exc:
-        logger.warning("narration_parse_failed", extra={"label": label, "error": str(exc)})
+        logger.warning(f"Narration for {label!r} returned invalid JSON — {exc}")
         return None
     except Exception as exc:
-        logger.warning("narration_call_failed", extra={"label": label, "error": str(exc)})
+        logger.warning(f"Narration API call failed for {label!r} — {exc}")
         return None
 
 
@@ -203,7 +289,7 @@ async def narrate_day(
     interests: list[str],
 ) -> dict | None:
     prompt = _build_day_prompt(day_index, day, bundle, interests)
-    return await _call_groq(_DAY_SYSTEM, prompt, max_tokens=1500, label=f"day_{day_index}")
+    return await _call_groq(_DAY_SYSTEM, prompt, max_tokens=2500, label=f"day_{day_index}")
 
 
 async def narrate_replanned_day(
@@ -228,7 +314,7 @@ async def narrate_replanned_day(
         f"[REPLAN] This day was just regenerated. Reason: {reason}. Changes: {summary}\n\n"
         + _build_day_prompt(day_index, day, bundle, interests)
     )
-    return await _call_groq(system, user, max_tokens=1500, label=f"replan_day_{day_index}")
+    return await _call_groq(system, user, max_tokens=2500, label=f"replan_day_{day_index}", model=_REPLAN_MODEL, temperature=0.7)
 
 
 async def narrate_trip(
@@ -239,7 +325,7 @@ async def narrate_trip(
     bundle: PrefetchBundle,
 ) -> dict | None:
     prompt = _build_trip_prompt(destination, interests, style, skeleton, bundle)
-    return await _call_groq(_TRIP_SYSTEM, prompt, max_tokens=1200, label="trip")
+    return await _call_groq(_TRIP_SYSTEM, prompt, max_tokens=2000, label="trip")
 
 
 async def narrate_all(

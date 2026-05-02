@@ -88,4 +88,4 @@ async def cache_sweep_loop() -> None:
         await asyncio.sleep(300)
         evicted = cache.sweep()
         if evicted:
-            logger.info("cache_sweep", extra={"evicted": evicted})
+            logger.info(f"Cache sweep evicted {evicted} expired entries")

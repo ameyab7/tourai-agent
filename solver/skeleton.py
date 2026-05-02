@@ -76,21 +76,67 @@ MEAL_SLOTS = [
 # ── Interest-aware POI scoring ────────────────────────────────────────────────
 # Stub — wire to a cheap LLM call in scorer.py when ready.
 
+_INTEREST_TYPE_MAP: dict[str, frozenset[str]] = {
+    "history":       frozenset({"museum", "monument", "castle", "ruins", "historic"}),
+    "art":           frozenset({"gallery", "museum", "street_art", "sculpture"}),
+    "nature":        frozenset({"park", "garden", "trail", "viewpoint", "beach", "waterfall"}),
+    "food":          frozenset({"restaurant", "cafe", "market", "food_hall"}),
+    "photography":   frozenset({"viewpoint", "park", "monument", "bridge", "skyline"}),
+    "architecture":  frozenset({"monument", "castle", "cathedral", "bridge", "museum"}),
+    "hiking":        frozenset({"trail", "park", "viewpoint", "beach", "hiking"}),
+    "shopping":      frozenset({"shopping", "market", "mall"}),
+    "culture":       frozenset({"museum", "gallery", "theatre", "library", "monument"}),
+    "nightlife":     frozenset({"bar", "club", "rooftop", "entertainment"}),
+    "beach":         frozenset({"beach", "waterfront", "marina"}),
+    "sports":        frozenset({"stadium", "arena", "sports"}),
+    "wellness":      frozenset({"spa", "park", "garden", "yoga"}),
+}
+
+_TYPE_BASE_SCORES: dict[str, float] = {
+    "museum":     0.65,
+    "monument":   0.60,
+    "viewpoint":  0.60,
+    "gallery":    0.58,
+    "park":       0.55,
+    "garden":     0.52,
+    "castle":     0.62,
+    "beach":      0.55,
+    "trail":      0.50,
+    "cafe":       0.40,
+    "restaurant": 0.38,
+    "shopping":   0.35,
+}
+
+
 def _heuristic_score(poi: dict, interests: list[str]) -> float:
-    """Fallback when the LLM scorer isn't available. Overlap-based, 0..1."""
+    """Fallback when the LLM scorer isn't available.
+
+    Uses semantic interest→type mapping for meaningful differentiation,
+    then falls back to keyword overlap for unrecognised interests.
+    Score range is intentionally wide (0.1–1.0) so ranking is useful.
+    """
+    poi_type = poi.get("poi_type", "")
+    base = _TYPE_BASE_SCORES.get(poi_type, 0.25)
+
     if not interests:
-        return 0.5
+        return base
+
+    # Semantic boost: how many of the user's interests map to this POI type
+    interest_hits = sum(
+        1 for interest in interests
+        if poi_type in _INTEREST_TYPE_MAP.get(interest.lower(), frozenset())
+    )
+
+    # Keyword overlap in name + tags as a secondary signal
     haystack = " ".join([
         poi.get("name", ""),
-        poi.get("poi_type", ""),
+        poi_type,
         " ".join(str(v) for v in poi.get("tags", {}).values()),
     ]).lower()
-    hits = sum(1 for i in interests if i.lower() in haystack)
-    type_boost = {
-        "museum": 0.3, "gallery": 0.3, "monument": 0.3,
-        "park": 0.2, "viewpoint": 0.3, "beach": 0.2,
-    }.get(poi.get("poi_type", ""), 0.0)
-    return min(1.0, 0.2 + 0.3 * hits + type_boost)
+    keyword_hits = sum(1 for i in interests if i.lower() in haystack)
+
+    score = base + 0.15 * interest_hits + 0.08 * keyword_hits
+    return min(1.0, score)
 
 
 # ── Geographic clustering ────────────────────────────────────────────────────
@@ -179,24 +225,43 @@ def _finalize_day_ordering(
 
     Called at the end of _schedule_day and by the re-plan mutator after
     modifying a day's stop list.
+
+    Transit rules:
+    - First stop: always "arrive", 0 min.
+    - Going TO a meal or accommodation: 0 min (restaurant not geocoded yet).
+    - Coming FROM a meal/accommodation TO an activity: use the last real
+      activity before the meal as the origin — the restaurant is nearby.
+    - Activity → Activity: real matrix distance.
     """
     stops.sort(key=lambda s: s.arrival_time)
     poi_index = {p["poi_id"]: i for i, p in enumerate(attractions)}
-    for i in range(1, len(stops)):
-        prev, cur = stops[i - 1], stops[i]
-        if (cur.is_meal or cur.poi_type == "accommodation"
-                or prev.is_meal or prev.poi_type == "accommodation"):
+
+    last_real_idx: int | None = None  # index into matrix for last non-meal, non-hotel stop
+
+    for i, cur in enumerate(stops):
+        if i == 0:
+            cur.transit_from_prev_min = 0
+            cur.transit_mode = "arrive"
+            if not cur.is_meal and cur.poi_type != "accommodation":
+                last_real_idx = poi_index.get(cur.poi_id)
+            continue
+
+        if cur.is_meal or cur.poi_type == "accommodation":
+            # Going to a meal/hotel — no transit (location unknown until narration)
             cur.transit_from_prev_min = 0
             cur.transit_mode = "walk"
+            continue
+
+        # cur is a real activity — compute transit from last known real location
+        ci = poi_index.get(cur.poi_id)
+        if ci is not None and last_real_idx is not None:
+            cur.transit_from_prev_min = matrix[last_real_idx][ci].driving_min
+            cur.transit_mode = transit_mode_for(cur.transit_from_prev_min)
         else:
-            pi = poi_index.get(prev.poi_id)
-            ci = poi_index.get(cur.poi_id)
-            if pi is not None and ci is not None:
-                cur.transit_from_prev_min = matrix[pi][ci].driving_min
-                cur.transit_mode = transit_mode_for(cur.transit_from_prev_min)
-    if stops:
-        stops[0].transit_from_prev_min = 0
-        stops[0].transit_mode = "arrive"
+            cur.transit_from_prev_min = 0
+            cur.transit_mode = "walk"
+
+        last_real_idx = ci if ci is not None else last_real_idx
 
 
 # ── Schedule a single day ────────────────────────────────────────────────────
@@ -233,10 +298,15 @@ def _schedule_day(
             skip_if_rushed=False,
         ))
 
+    CHECKIN_TIME  = time(14, 0)
+    CHECKOUT_TIME = time(11, 0)
+
     meals_today = list(MEAL_SLOTS)
     if is_first_day:
-        meals_today = [m for m in meals_today if m["label"] != "breakfast"]
+        # Drop any meal that falls before hotel check-in (breakfast 8:30, lunch 12:30)
+        meals_today = [m for m in meals_today if m["time"] >= CHECKIN_TIME]
     if is_last_day:
+        # Drop dinner — guests check out before it
         meals_today = [m for m in meals_today if m["label"] != "dinner"]
 
     timeline: list[tuple[time, str, object]] = []
@@ -292,6 +362,13 @@ def _schedule_day(
             ))
             prev_idx = ai
 
+    # Last day: drop any non-meal activity scheduled at or after checkout
+    if is_last_day:
+        stops = [
+            s for s in stops
+            if s.is_meal or s.poi_type == "accommodation" or s.arrival_time < "11:00"
+        ]
+
     # Mark the last non-meal, non-hotel stop as skippable
     for s in reversed(stops):
         if not s.is_meal and s.poi_type != "accommodation":
@@ -314,6 +391,58 @@ def _schedule_day(
 
     _finalize_day_ordering(stops, attractions, matrix)
     return SkeletonDay(date=day_date.isoformat(), weekday=day_date.weekday(), stops=stops)
+
+
+# ── Type-diversity enforcement ───────────────────────────────────────────────
+
+def _enforce_type_diversity(
+    clusters: list[list[int]],
+    attractions: list[dict],
+) -> list[list[int]]:
+    """Prevent the same POI type dominating every day.
+
+    For each day, cap any single type at 2 stops. Excess stops are moved to
+    days that have the fewest stops and don't already have that type overloaded.
+    Falls back to appending if no ideal day exists (better than dropping).
+    """
+    _TYPE_CAP = 2
+
+    def _type(idx: int) -> str:
+        return attractions[idx].get("poi_type", "unknown")
+
+    for day_i, cluster in enumerate(clusters):
+        type_counts: dict[str, int] = {}
+        overflow: list[int] = []
+        kept: list[int] = []
+
+        for idx in cluster:
+            t = _type(idx)
+            type_counts[t] = type_counts.get(t, 0) + 1
+            if type_counts[t] > _TYPE_CAP:
+                overflow.append(idx)
+            else:
+                kept.append(idx)
+
+        clusters[day_i] = kept
+
+        for idx in overflow:
+            t = _type(idx)
+            # Move to the day with fewest stops that isn't already over cap for this type
+            best_day = -1
+            best_size = float("inf")
+            for other_i, other_cluster in enumerate(clusters):
+                if other_i == day_i:
+                    continue
+                other_type_count = sum(1 for oi in other_cluster if _type(oi) == t)
+                if other_type_count < _TYPE_CAP and len(other_cluster) < best_size:
+                    best_size = len(other_cluster)
+                    best_day = other_i
+            if best_day != -1:
+                clusters[best_day].append(idx)
+            else:
+                clusters[day_i].append(idx)  # no better home — keep it
+
+    return clusters
 
 
 # ── Public entry point ───────────────────────────────────────────────────────
@@ -354,6 +483,7 @@ def build_skeleton(
         hotel = max(rated, key=lambda h: int(h["stars"])) if rated else bundle.hotels[0]
 
     clusters = _cluster_by_proximity(sorted_attractions, sorted_matrix, num_days, drive_tol_min)
+    clusters = _enforce_type_diversity(clusters, sorted_attractions)
     ordered_clusters = [_order_within_cluster(c, sorted_matrix) for c in clusters]
 
     weather_by_date = {w.get("date"): w for w in bundle.weather}
@@ -381,5 +511,10 @@ def build_skeleton(
         "drive_tol_min":    drive_tol_min,
         "hotel_picked":     hotel["name"] if hotel else None,
     }
-    logger.info("skeleton_built", extra=diagnostics)
+    logger.info(
+        f"Skeleton built — {diagnostics['poi_count']} POIs across {len(days)} days, "
+        f"hotel: {diagnostics['hotel_picked'] or 'none picked'}, "
+        f"drive tolerance: {drive_tol_min}min",
+        extra=diagnostics,
+    )
     return Skeleton(days=days, hotel=hotel, diagnostics=diagnostics)

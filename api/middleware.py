@@ -47,13 +47,10 @@ async def observability_middleware(request: Request, call_next) -> Response:
     method   = request.method
     endpoint = path.split("?")[0]
 
-    logger.info(
-        "request_received",
-        extra={"method": method, "endpoint": endpoint, "ip": ip},
-    )
+    logger.info(f"Incoming {method} {endpoint} from {ip}")
 
     if not check_rate_limit(ip):
-        logger.warning("rate_limit_exceeded", extra={"ip": ip, "endpoint": endpoint})
+        logger.warning(f"Rate limit exceeded for {ip} — rejecting {endpoint}")
         metrics.request_count.labels(endpoint=endpoint, method=method, status="429").inc()
         metrics.errors_total.labels(endpoint=endpoint, error_type="rate_limited").inc()
         return Response(
@@ -71,10 +68,7 @@ async def observability_middleware(request: Request, call_next) -> Response:
         )
     except asyncio.TimeoutError:
         elapsed_ms = round((time.perf_counter() - start) * 1000)
-        logger.error(
-            "request_timeout",
-            extra={"endpoint": endpoint, "ip": ip, "elapsed_ms": elapsed_ms},
-        )
+        logger.error(f"Request timed out after {elapsed_ms}ms — {endpoint} from {ip}")
         metrics.request_count.labels(endpoint=endpoint, method=method, status="504").inc()
         metrics.errors_total.labels(endpoint=endpoint, error_type="timeout").inc()
         return Response(
@@ -98,16 +92,7 @@ async def observability_middleware(request: Request, call_next) -> Response:
 
     response.headers["X-Request-ID"] = cid
 
-    logger.info(
-        "request_completed",
-        extra={
-            "method":     method,
-            "endpoint":   endpoint,
-            "status":     response.status_code,
-            "elapsed_ms": elapsed_ms,
-            "ip":         ip,
-        },
-    )
+    logger.info(f"{method} {endpoint} → {response.status_code} in {elapsed_ms}ms (from {ip})")
 
     return response
 

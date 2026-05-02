@@ -18,11 +18,49 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 import traceback
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from urllib.parse import quote_plus
+
+_DEBUG_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "debug_output")
+
+_LOG_BUILTINS = frozenset(
+    logging.LogRecord("", 0, "", 0, "", (), None).__dict__.keys()
+) | {"message", "asctime"}
+
+
+class _PipelineLogHandler(logging.Handler):
+    """Captures log records for one pipeline run into a list."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.records: list[dict] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        entry: dict = {
+            "time":    logging.Formatter("%(asctime)s", "%H:%M:%S").formatTime(record, "%H:%M:%S"),
+            "level":   record.levelname,
+            "logger":  record.name,
+            "message": record.getMessage(),
+        }
+        extra = {
+            k: v for k, v in record.__dict__.items()
+            if k not in _LOG_BUILTINS and not k.startswith("_")
+        }
+        if extra:
+            entry["extra"] = extra
+        self.records.append(entry)
+
+
+def _write_debug_files(plan_id: str, plan_dict: dict, log_records: list[dict]) -> None:
+    os.makedirs(_DEBUG_DIR, exist_ok=True)
+    with open(os.path.join(_DEBUG_DIR, f"plan_{plan_id}.json"), "w") as f:
+        json.dump(plan_dict, f, indent=2, ensure_ascii=False)
+    with open(os.path.join(_DEBUG_DIR, f"logs_{plan_id}.json"), "w") as f:
+        json.dump(log_records, f, indent=2, ensure_ascii=False)
 
 from fastapi import APIRouter, Header
 from fastapi.responses import StreamingResponse
@@ -104,7 +142,14 @@ async def run_pipeline(
     plan_id = uuid.uuid4().hex
     req_id = plan_id[:8]
     t_start = time.perf_counter()
-    logger.info("pipeline_start", extra={"req_id": req_id, "plan_id": plan_id, "destination": destination})
+
+    _log_handler = _PipelineLogHandler()
+    logging.getLogger().addHandler(_log_handler)
+
+    def _emit(payload: dict) -> str:
+        return _sse(payload)
+
+    logger.info(f"Starting itinerary pipeline for {destination!r}", extra={"req_id": req_id, "plan_id": plan_id})
 
     flights_url = f"https://www.google.com/travel/flights?q=Flights+to+{quote_plus(destination)}"
     booking_url = (
@@ -112,25 +157,26 @@ async def run_pipeline(
         f"&checkin={start_date}&checkout={end_date}"
     )
 
-    yield _sse({"type": "stage", "stage": "start", "req_id": req_id, "plan_id": plan_id,
-                "message": f"Planning your trip to {destination}…"})
+    yield _emit({"type": "stage", "stage": "start", "req_id": req_id, "plan_id": plan_id,
+                 "message": f"Planning your trip to {destination}…"})
 
     # ── Stage 0: cache lookup ────────────────────────────────────────────────
     skel_key = skeleton_key(destination, start_date, end_date, interests, pace, drive_tol_hrs)
     cached_skeleton_dict = await cache.get(skel_key)
 
     # ── Stage 1: prefetch ────────────────────────────────────────────────────
-    yield _sse({"type": "stage", "stage": "prefetch", "message": "Gathering local data…"})
+    yield _emit({"type": "stage", "stage": "prefetch", "message": "Gathering local data…"})
     d0 = date.fromisoformat(start_date)
     d1 = date.fromisoformat(end_date)
     dates = [(d0 + timedelta(days=i)).isoformat() for i in range((d1 - d0).days + 1)]
 
     bundle = await prefetch_all(destination, dates, interests, settings.geoapify_api_key)
     if bundle is None:
-        yield _sse({"type": "error", "message": f"Could not find destination: {destination!r}"})
+        logging.getLogger().removeHandler(_log_handler)
+        yield _emit({"type": "error", "message": f"Could not find destination: {destination!r}"})
         return
 
-    yield _sse({"type": "stage", "stage": "prefetch_done", "message": (
+    yield _emit({"type": "stage", "stage": "prefetch_done", "message": (
         f"Found {len(bundle.attractions)} attractions, "
         f"{len(bundle.restaurants)} restaurants, "
         f"{len(bundle.hotels)} hotels"
@@ -139,17 +185,16 @@ async def run_pipeline(
     # ── Stage 2: skeleton (cached or built) ──────────────────────────────────
     if cached_skeleton_dict is not None:
         skeleton = _skeleton_from_dict(cached_skeleton_dict)
-        # Re-attach weather flags from current bundle (skeleton cache is stale on weather)
         wx_by_date = {w.get("date"): w for w in bundle.weather}
         for day in skeleton.days:
             wx = wx_by_date.get(day.date)
             if wx:
                 day.weather_is_clear = wx.get("is_clear")
-        yield _sse({"type": "stage", "stage": "skeleton_cached",
-                    "message": "Reusing cached plan structure…"})
+        yield _emit({"type": "stage", "stage": "skeleton_cached",
+                     "message": "Reusing cached plan structure…"})
     else:
-        yield _sse({"type": "stage", "stage": "scoring",
-                    "message": "Matching attractions to your interests…"})
+        yield _emit({"type": "stage", "stage": "scoring",
+                     "message": "Matching attractions to your interests…"})
         scores = await score_pois(bundle.attractions, interests)
         skeleton = build_skeleton(
             bundle=bundle,
@@ -162,11 +207,11 @@ async def run_pipeline(
         )
         await cache.set(skel_key, _skeleton_to_dict(skeleton), TTL.SKELETON)
 
-    yield _sse({"type": "stage", "stage": "skeleton_done",
-                "message": f"Built {len(skeleton.days)}-day skeleton"})
+    yield _emit({"type": "stage", "stage": "skeleton_done",
+                 "message": f"Built {len(skeleton.days)}-day skeleton"})
 
     # ── Stage 3: narration (parallel, stream as each completes) ──────────────
-    yield _sse({"type": "stage", "stage": "narration", "message": "Crafting your itinerary…"})
+    yield _emit({"type": "stage", "stage": "narration", "message": "Crafting your itinerary…"})
 
     trip_task = asyncio.create_task(narrate_trip(destination, interests, style, skeleton, bundle))
     day_tasks: list[asyncio.Task] = [
@@ -185,7 +230,7 @@ async def run_pipeline(
             if finished is trip_task:
                 trip_result = result
                 if trip_result:
-                    yield _sse({"type": "trip", "trip": {
+                    yield _emit({"type": "trip", "trip": {
                         "title":      trip_result.get("title"),
                         "summary":    trip_result.get("summary"),
                         "highlights": trip_result.get("highlights", []),
@@ -194,10 +239,10 @@ async def run_pipeline(
                 idx = day_tasks.index(finished)
                 day_results[idx] = result
                 merged = _merge_day(idx, skeleton.days[idx], day_results[idx], bundle)
-                yield _sse({"type": "day", "day_index": idx, "day": merged.model_dump()})
+                yield _emit({"type": "day", "day_index": idx, "day": merged.model_dump()})
 
     # ── Stage 4: validation & assembly ───────────────────────────────────────
-    yield _sse({"type": "stage", "stage": "validation", "message": "Finalizing…"})
+    yield _emit({"type": "stage", "stage": "validation", "message": "Finalizing…"})
     try:
         final_plan = await assemble_and_validate(
             destination=destination,
@@ -210,12 +255,13 @@ async def run_pipeline(
             bundle=bundle,
         )
     except Exception:
-        logger.error("validation_failed", extra={"req_id": req_id, "exc": traceback.format_exc()})
-        yield _sse({"type": "error", "message": "Could not finalize the plan."})
+        logger.error(f"Plan validation failed for req {req_id} — could not finalize", extra={"exc": traceback.format_exc()})
+        logging.getLogger().removeHandler(_log_handler)
+        yield _emit({"type": "error", "message": "Could not finalize the plan."})
         return
 
     elapsed = round(time.perf_counter() - t_start, 2)
-    logger.info("pipeline_complete", extra={"req_id": req_id, "plan_id": plan_id, "elapsed_s": elapsed})
+    logger.info(f"Pipeline complete for {destination!r} in {elapsed}s", extra={"req_id": req_id, "plan_id": plan_id})
 
     plan_dict = final_plan.model_dump()
     plan_dict["getting_there"] = {"flights_url": flights_url}
@@ -239,8 +285,10 @@ async def run_pipeline(
         final_plan=plan_dict,
     )
     await plan_store.save(plan_id, snapshot)
+    logging.getLogger().removeHandler(_log_handler)
+    _write_debug_files(plan_id, plan_dict, _log_handler.records)
 
-    yield _sse({"type": "complete", "plan": plan_dict, "plan_id": plan_id, "elapsed_s": elapsed})
+    yield _emit({"type": "complete", "plan": plan_dict, "plan_id": plan_id, "elapsed_s": elapsed})
 
 
 # ── Endpoint ──────────────────────────────────────────────────────────────────
@@ -270,7 +318,7 @@ async def stream_itinerary_v2(
                 if body.drive_tolerance_hrs is None:
                     drive_tol = float(profile.get("drive_tolerance_hrs") or drive_tol)
         except Exception as exc:
-            logger.warning("profile_load_failed", extra={"error": str(exc)})
+            logger.warning(f"Could not load user profile — using request defaults: {exc}")
 
     async def _stream():
         try:
@@ -280,7 +328,7 @@ async def stream_itinerary_v2(
             ):
                 yield chunk
         except Exception:
-            logger.error("pipeline_stream_error", extra={"exc": traceback.format_exc()})
+            logger.error("Pipeline stream error — sending error event to client", extra={"exc": traceback.format_exc()})
             yield _sse({"type": "error", "message": "Something went wrong."})
 
     return StreamingResponse(
@@ -299,7 +347,7 @@ async def replan_itinerary(plan_id: str, body: ReplanRequest):
             async for chunk in run_replan_pipeline(plan_id, body):
                 yield chunk
         except Exception:
-            logger.error("replan_stream_error", extra={"exc": traceback.format_exc()})
+            logger.error("Replan stream error — sending error event to client", extra={"exc": traceback.format_exc()})
             yield _sse({"type": "error", "message": "Something went wrong."})
 
     return StreamingResponse(

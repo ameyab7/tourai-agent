@@ -26,7 +26,7 @@ async def get_current_user(authorization: str = Header(...)):
     except HTTPException:
         raise
     except Exception as exc:
-        logger.warning("auth_failed", extra={"error": type(exc).__name__, "detail": str(exc)})
+        logger.warning(f"Auth token validation failed — {type(exc).__name__}: {exc}")
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
@@ -42,5 +42,5 @@ async def get_optional_user(authorization: str = Header(default="")):
         resp = await asyncio.to_thread(get_supabase().auth.get_user, token)
         return resp.user if resp.user else None
     except Exception as exc:
-        logger.warning("optional_auth_failed", extra={"error": type(exc).__name__, "detail": str(exc)})
+        logger.warning(f"Optional auth check failed — continuing unauthenticated ({type(exc).__name__}: {exc})")
         return None

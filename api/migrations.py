@@ -72,6 +72,6 @@ def run_migrations(database_url: str) -> None:
             cur.execute(stmt)
         cur.close()
         conn.close()
-        logger.info("migrations_ok")
+        logger.info("Database migrations applied successfully")
     except Exception as exc:
-        logger.error("migrations_failed", extra={"error": str(exc)})
+        logger.error(f"Database migration failed — {exc}")

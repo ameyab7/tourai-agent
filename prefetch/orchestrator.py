@@ -83,7 +83,7 @@ async def _cached_or_fetch(key: str, ttl: int, fetch_coro_factory, label: str, h
     try:
         result = await fetch_coro_factory()
     except Exception as exc:
-        logger.warning("prefetch_fetch_failed", extra={"label": label, "error": str(exc)})
+        logger.warning(f"Could not fetch {label!r} data during prefetch — {exc}")
         return None  # caller decides default
     if result is not None:
         await cache.set(key, result, ttl)
@@ -106,42 +106,81 @@ async def _geocode(destination: str, api_key: str) -> dict | None:
     )
 
 
-async def _attractions(lat: float, lon: float, interests: list[str], api_key: str) -> list[dict]:
-    """POI fetch + interest-aware ranking. Cache the *ranked* result keyed by coords+interests."""
+# Extra-large cities have attractions genuinely spread across 30 km — the Strip,
+# Henderson, North Las Vegas etc. are all separate areas. For most international
+# and compact cities 20 km is more than enough and avoids pulling in distant
+# suburban noise.
+_EXTRA_LARGE_CITIES = frozenset({
+    "las vegas", "los angeles", "phoenix", "houston", "dallas", "san antonio",
+    "jacksonville", "fort worth", "san jose", "austin", "charlotte", "columbus",
+    "indianapolis", "denver", "nashville", "oklahoma city", "el paso", "memphis",
+    "seattle", "portland", "atlanta", "miami", "tampa", "orlando",
+})
+
+_DEFAULT_RADIUS      = 20_000  # good default for dense/international cities
+_EXTRA_LARGE_RADIUS  = 30_000  # sprawling US metros only
+_MIN_ATTRACTIONS     = 15      # trigger refetch if below this
+
+
+def _poi_radius(display_name: str) -> int:
+    """Return fetch radius in metres.
+
+    Most cities (including international ones) are served well by 20 km.
+    Cities in _EXTRA_LARGE_CITIES get 30 km — their points of interest are
+    genuinely scattered across a much larger footprint.
+    """
+    if display_name.lower().split(",")[0].strip() in _EXTRA_LARGE_CITIES:
+        return _EXTRA_LARGE_RADIUS
+    return _DEFAULT_RADIUS
+
+
+async def _attractions(lat: float, lon: float, interests: list[str], api_key: str, display_name: str = "") -> list[dict]:
+    """POI fetch + interest-aware ranking. Cache the ranked result keyed by coords+interests+radius."""
     from utils.geoapify_places import fetch_pois
     from utils.poi_ranker import rank_pois
 
-    # Cache key includes interests so different interest profiles get different rankings.
-    # We round coords to share cache between nearby queries.
-    base_key = pois_key(lat, lon, 6000)
+    # Radius must be computed before the cache key so the key reflects the real fetch.
+    radius = _poi_radius(display_name)
+    food_types = {"restaurant", "cafe", "bar", "pub", "fast_food"}
+
+    base_key = pois_key(lat, lon, radius)
     interest_tag = ",".join(sorted(i.lower() for i in interests)) or "default"
     key = f"{base_key}:{interest_tag}"
 
-    cached = await cache.get(key)
-    if cached is not None:
-        return cached
+    async def _fetch() -> list[dict]:
+        raw = await fetch_pois(lat, lon, radius, api_key, limit=100)
+        attractions = [p for p in raw if p["poi_type"] not in food_types]
 
-    food_types = {"restaurant", "cafe", "bar", "pub", "fast_food"}
-    try:
-        raw = await fetch_pois(lat, lon, 6000, api_key, limit=50)
-    except Exception as exc:
-        logger.warning("prefetch_fetch_failed", extra={"label": "attractions", "error": str(exc)})
-        return []
-    attractions = [p for p in raw if p["poi_type"] not in food_types]
-    ranked = rank_pois(attractions, interests, lat, lon, limit=12, max_per_type=3)
-    result = [
-        {
-            "poi_id": f"a{idx}",
-            "name": p["name"],
-            "poi_type": p["poi_type"],
-            "lat": p["lat"],
-            "lon": p["lon"],
-            "tags": p.get("tags", {}),
-        }
-        for idx, p in enumerate(ranked)
-    ]
-    await cache.set(key, result, TTL.POIS)
-    return result
+        # Thin result — retry at 30 km (only if initial radius was smaller).
+        if len(attractions) < _MIN_ATTRACTIONS and radius < _EXTRA_LARGE_RADIUS:
+            logger.info(f"Only {len(attractions)} attractions found at initial radius — retrying at {_EXTRA_LARGE_RADIUS}m")
+            try:
+                raw2 = await fetch_pois(lat, lon, _EXTRA_LARGE_RADIUS, api_key, limit=100)
+                attractions = [p for p in raw2 if p["poi_type"] not in food_types]
+            except Exception as exc:
+                logger.warning(f"Attraction refetch at wider radius failed — {exc}")
+
+            if len(attractions) < _MIN_ATTRACTIONS:
+                logger.warning(
+                    f"Still only {len(attractions)} attractions after expanding to {_EXTRA_LARGE_RADIUS}m for {display_name!r}"
+                )
+
+        ranked = rank_pois(attractions, interests, lat, lon, limit=25, max_per_type=3)
+        return [
+            {
+                "poi_id": f"a{idx}",
+                "name": p["name"],
+                "poi_type": p["poi_type"],
+                "lat": p["lat"],
+                "lon": p["lon"],
+                "tags": p.get("tags", {}),
+            }
+            for idx, p in enumerate(ranked)
+        ]
+
+    _attr_hits: dict[str, bool] = {}
+    result = await _cached_or_fetch(key, TTL.POIS, _fetch, "attractions", _attr_hits)
+    return result if result is not None else []
 
 
 async def _restaurants(lat: float, lon: float, api_key: str) -> list[dict]:
@@ -153,8 +192,8 @@ async def _restaurants(lat: float, lon: float, api_key: str) -> list[dict]:
         _PLACES_URL,
         params={
             "categories": FOOD_CATS,
-            "filter": f"circle:{lon},{lat},3000",
-            "limit": 12,
+            "filter": f"circle:{lon},{lat},5000",
+            "limit": 30,
             "apiKey": api_key,
         },
     )
@@ -172,7 +211,7 @@ async def _restaurants(lat: float, lon: float, api_key: str) -> list[dict]:
             "lat": coords[1] if len(coords) >= 2 else lat,
             "lon": coords[0] if len(coords) >= 2 else lon,
         })
-    return out[:10]
+    return out[:20]
 
 
 async def _hotels(lat: float, lon: float, api_key: str) -> list[dict]:
@@ -239,7 +278,7 @@ async def prefetch_all(
 
     attractions, restaurants, hotels, weather = await asyncio.gather(
         # Attractions has its own cache logic (interest-aware key)
-        _attractions(lat, lon, interests, geoapify_api_key),
+        _attractions(lat, lon, interests, geoapify_api_key, display_name=display),
         _wrap("restaurants", restaurants_key(lat, lon), TTL.RESTAURANTS,
               lambda: _restaurants(lat, lon, geoapify_api_key), []),
         _wrap("hotels", hotels_key(lat, lon), TTL.HOTELS,
@@ -253,14 +292,12 @@ async def prefetch_all(
     points = [(p["lat"], p["lon"]) for p in attractions]
     matrix = distance_provider.matrix(points) if points else []
 
-    logger.info("prefetch_complete", extra={
-        "destination": destination,
-        "attractions": len(attractions),
-        "restaurants": len(restaurants),
-        "hotels": len(hotels),
-        "weather_days": len(weather),
-        "cache_hits": hits,
-    })
+    logger.info(
+        f"Prefetch complete for {destination!r} — "
+        f"{len(attractions)} attractions, {len(restaurants)} restaurants, "
+        f"{len(hotels)} hotels, {len(weather)} days of weather",
+        extra={"cache_hits": hits},
+    )
 
     return PrefetchBundle(
         lat=lat,

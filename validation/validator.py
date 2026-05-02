@@ -181,7 +181,7 @@ async def assemble_and_validate(
     """
     retry_indices = [i for i, n in enumerate(day_narrations) if n is None]
     if retry_indices and repair_retries > 0:
-        logger.info("repair_retrying_days", extra={"days": retry_indices})
+        logger.info(f"Re-narrating {len(retry_indices)} failed days before final assembly: {retry_indices}")
         retried = await asyncio.gather(*[
             narrate_day(i, skeleton.days[i], bundle, interests)
             for i in retry_indices
@@ -211,12 +211,51 @@ async def assemble_and_validate(
         days=final_days,
     )
 
+    _repair_restaurant_variety(plan, bundle)
     _audit_constraints(plan, drive_tol_min=skeleton.diagnostics.get("drive_tol_min", 120))
     return plan
 
 
+def _repair_restaurant_variety(plan: FinalPlan, bundle: "PrefetchBundle") -> None:
+    """Ensure no restaurant appears >2× across the trip or >1× on the same day.
+
+    Repair: swap the duplicate meal stop name with the next unused restaurant
+    from the prefetched list. Operates in-place on plan.days.
+    """
+    used_trip: dict[str, int] = {}   # name → count across all days
+    available = [r["name"] for r in bundle.restaurants]
+
+    for day in plan.days:
+        used_today: set[str] = set()
+        for stop in day.stops:
+            if not stop.is_meal or not stop.name or stop.name.startswith("("):
+                continue
+
+            name = stop.name
+            same_day_dup = name in used_today
+            trip_dup     = used_trip.get(name, 0) >= 2
+
+            if same_day_dup or trip_dup:
+                replacement = next(
+                    (r for r in available
+                     if r not in used_today
+                     and (r not in used_trip or used_trip[r] < 2)),
+                    None,
+                )
+                if replacement:
+                    logger.info(
+                        f"Swapped duplicate restaurant {name!r} with {replacement!r} "
+                        f"(reason: {'same day duplicate' if same_day_dup else 'appeared too many times in the trip'})"
+                    )
+                    stop.name = replacement
+                    name = replacement
+
+            used_today.add(name)
+            used_trip[name] = used_trip.get(name, 0) + 1
+
+
 def _audit_constraints(plan: FinalPlan, drive_tol_min: int) -> None:
-    """Log violations so you can monitor quality in production."""
+    """Log constraint violations for production monitoring."""
     issues: list[str] = []
     for day in plan.days:
         meals = sum(1 for s in day.stops if s.is_meal)
@@ -229,4 +268,4 @@ def _audit_constraints(plan: FinalPlan, drive_tol_min: int) -> None:
                     f" > tol {drive_tol_min}"
                 )
     if issues:
-        logger.warning("plan_audit_issues", extra={"issues": issues})
+        logger.warning(f"Plan constraint violations detected — {issues}")

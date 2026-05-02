@@ -2,21 +2,24 @@
 api/main.py — App factory + lifespan.
 
 Run:
-  uvicorn api.main:app --port 8000
+  uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
   (from repo root so utils/ resolves correctly)
 
 Module layout:
-  api/config.py        — Settings
-  api/logging_setup.py — JSON logging + correlation ID
-  api/cache.py         — MemoryCache + cache keys + sweep loop
-  api/metrics.py       — Prometheus counters/histograms + timed()
-  api/middleware.py    — observability middleware + rate limiter
-  api/models.py        — Pydantic request/response models
+  api/config.py          — Settings
+  api/logging_setup.py   — JSON logging + correlation ID
+  api/cache.py           — MemoryCache + cache keys + sweep loop
+  api/metrics.py         — Prometheus counters/histograms + timed()
+  api/middleware.py      — observability middleware + rate limiter
+  api/models.py          — Pydantic request/response models
+  api/pipeline.py        — /v2/itinerary/stream, /v2/itinerary/{id}/replan
   api/routes/pois.py     — /v1/visible-pois, /v1/current-street
   api/routes/ask.py      — /v1/ask
   api/routes/story.py    — /v1/story
   api/routes/health.py   — /health, /metrics, /debug
   api/routes/feedback.py — /v1/feedback
+  api/routes/profile.py  — /v1/profile
+  api/routes/recommendations.py — /v1/recommendations
 """
 
 import asyncio
@@ -40,7 +43,7 @@ from api.config import settings
 from api.logging_setup import setup_logging
 from api.middleware import observability_middleware
 from api import pipeline
-from api.routes import ask, feedback, health, itinerary, itinerary_agent, pois, profile, recommendations, route, story
+from api.routes import ask, feedback, health, pois, profile, recommendations, route, story
 
 logger = setup_logging(settings.log_file)
 
@@ -53,7 +56,7 @@ try:
             traces_sample_rate=0.1,
             environment="production" if not settings.debug else "development",
         )
-        logger.info("sentry_enabled")
+        logger.info("Sentry error tracking enabled")
 except ImportError:
     pass
 
@@ -93,8 +96,6 @@ app.include_router(feedback.router)
 app.include_router(route.router)
 app.include_router(profile.router)
 app.include_router(recommendations.router)
-app.include_router(itinerary.router)
-app.include_router(itinerary_agent.router)
 app.include_router(pipeline.router)
 
 

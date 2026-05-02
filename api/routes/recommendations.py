@@ -182,7 +182,7 @@ async def get_recommendations(
             )
             return result.data[0] if result.data else {}
         except Exception as exc:
-            logger.warning("profile_load_failed", extra={"error": str(exc)})
+            logger.warning(f"Could not load user profile — using empty interests: {exc}")
             return {}
 
     try:
@@ -193,24 +193,24 @@ async def get_recommendations(
             return_exceptions=True,
         )
     except Exception as exc:
-        logger.error("recommendations_gather_failed", extra={"error": str(exc)})
+        logger.error(f"Failed to gather recommendations data — returning 500: {exc}")
         raise HTTPException(status_code=500, detail="Failed to fetch recommendations data")
 
     # Normalise any exceptions from gather into safe defaults
     if isinstance(profile_data, Exception):
-        logger.warning("profile_gather_exc", extra={"error": str(profile_data)})
+        logger.warning(f"User profile fetch failed — using empty interests: {profile_data}")
         profile_data = {}
     if isinstance(weather, Exception):
-        logger.warning("weather_gather_exc", extra={"error": str(weather)})
+        logger.warning(f"Weather fetch failed — using unknown conditions: {weather}")
         weather = {"description": "Unknown", "temperature_c": 0, "is_clear": False,
                    "sunrise_iso": "", "sunset_iso": ""}
     if isinstance(raw_pois, Exception):
-        logger.warning("pois_gather_exc", extra={"error": str(raw_pois)})
+        logger.warning(f"POI fetch failed — returning empty recommendation cards: {raw_pois}")
         raw_pois = []
 
     # Gracefully return empty cards when all Overpass mirrors fail
     if not raw_pois:
-        logger.warning("recommendations_no_pois", extra={"lat": body.lat, "lon": body.lon})
+        logger.warning(f"No POIs found near ({body.lat}, {body.lon}) — returning empty recommendation cards")
         light = get_light_windows(
             weather.get("sunrise_iso", ""), weather.get("sunset_iso", "")
         )
@@ -285,13 +285,10 @@ async def get_recommendations(
         for score, poi, reason in scored[:body.limit]
     ]
 
-    logger.info("recommendations_ok", extra={
-        "user_id":    str(user.id),
-        "mood":       body.mood,
-        "pois_found": len(raw_pois),
-        "candidates": len(candidates),
-        "cards":      len(cards),
-    })
+    logger.info(
+        f"Recommendations ready for user {user.id} — "
+        f"{len(cards)}/{len(raw_pois)} cards returned (mood: {body.mood}, candidates: {len(candidates)})"
+    )
 
     return RecommendationsResponse(
         cards      = cards,

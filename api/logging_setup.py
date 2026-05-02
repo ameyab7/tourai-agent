@@ -16,11 +16,12 @@ class _ReadableFormatter(logging.Formatter):
     LEVEL_ICONS = {"DEBUG": "·", "INFO": "✓", "WARNING": "!", "ERROR": "✗", "CRITICAL": "✗✗"}
 
     def format(self, record: logging.LogRecord) -> str:
-        icon  = self.LEVEL_ICONS.get(record.levelname, "·")
-        extra = {k: v for k, v in record.__dict__.items()
-                 if k not in _LOG_RECORD_BUILTINS and not k.startswith("_")}
+        icon   = self.LEVEL_ICONS.get(record.levelname, "·")
+        module = record.name.split(".")[-1]
+        extra  = {k: v for k, v in record.__dict__.items()
+                  if k not in _LOG_RECORD_BUILTINS and not k.startswith("_")}
         extra_str = "  " + "  ".join(f"{k}={v}" for k, v in extra.items()) if extra else ""
-        line = f"{icon} {record.getMessage()}{extra_str}"
+        line = f"{icon} [{module}] {record.getMessage()}{extra_str}"
         if record.exc_info:
             line += "\n" + self.formatException(record.exc_info)
         return line

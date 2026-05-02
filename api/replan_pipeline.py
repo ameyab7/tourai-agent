@@ -68,7 +68,7 @@ async def run_replan_pipeline(plan_id: str, request: ReplanRequest):
     try:
         new_skeleton, mutation_log = mutate_constraints(skeleton, bundle, request)
     except Exception:
-        logger.error("mutate_failed", extra={"plan_id": plan_id, "exc": traceback.format_exc()})
+        logger.error(f"Failed to apply constraint changes to plan {plan_id}", extra={"exc": traceback.format_exc()})
         yield _sse({"type": "error", "message": "Failed to apply changes."})
         return
 
@@ -78,7 +78,7 @@ async def run_replan_pipeline(plan_id: str, request: ReplanRequest):
             day_index, new_skeleton.days[day_index], bundle, interests, mutation_log
         )
     except Exception:
-        logger.error("narrate_failed", extra={"plan_id": plan_id, "exc": traceback.format_exc()})
+        logger.error(f"Re-narration failed for plan {plan_id} day {day_index} — will use sparse fallback", extra={"exc": traceback.format_exc()})
         narration = None
 
     merged_day = _merge_day(day_index, new_skeleton.days[day_index], narration, bundle)
@@ -90,7 +90,7 @@ async def run_replan_pipeline(plan_id: str, request: ReplanRequest):
         try:
             diff = compute_day_diff(before_day, merged_day)
         except Exception:
-            logger.warning("diff_failed", extra={"plan_id": plan_id, "exc": traceback.format_exc()})
+            logger.warning(f"Could not compute day diff for plan {plan_id} — diff will be empty", extra={"exc": traceback.format_exc()})
 
     yield _sse({
         "type": "diff",
