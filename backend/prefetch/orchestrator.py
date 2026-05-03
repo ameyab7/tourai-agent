@@ -349,6 +349,28 @@ async def _restaurants(lat: float, lon: float, api_key: str) -> list[dict]:
     return FetchResult(data=out[:20], failed=False)
 
 
+_CHAIN_BLOCKLIST = {
+    "mcdonald's", "mcdonalds", "burger king", "wendy's", "wendys", "taco bell",
+    "kfc", "popeyes", "chick-fil-a", "chick fil a", "subway", "quiznos",
+    "starbucks", "dunkin", "dunkin'", "tim hortons", "peet's", "peets",
+    "domino's", "dominoes", "pizza hut", "little caesars", "papa john's",
+    "olive garden", "red lobster", "applebee's", "applebees", "chili's", "chilies",
+    "ihop", "denny's", "dennys", "waffle house", "cracker barrel",
+    "red robin", "outback steakhouse", "texas roadhouse", "longhorn steakhouse",
+    "p.f. chang's", "pf changs", "cheesecake factory", "bj's", "bjs",
+    "panera", "panera bread", "chipotle", "qdoba", "moe's", "moes",
+    "five guys", "shake shack", "in-n-out", "in n out", "whataburger",
+    "jack in the box", "sonic", "arby's", "arbys", "hardee's", "hardees",
+    "pollo tropical", "el pollo loco", "panda express",
+    "jamba", "jamba juice", "smoothie king",
+    "first watch", "broken yolk", "corner bakery",
+}
+
+
+def _is_chain(name: str) -> bool:
+    return name.lower().strip() in _CHAIN_BLOCKLIST
+
+
 async def _restaurants(lat: float, lon: float, api_key: str, display_name: str = "") -> FetchResult:
     try:
         from utils.geoapify_places import _PLACES_URL
@@ -360,7 +382,7 @@ async def _restaurants(lat: float, lon: float, api_key: str, display_name: str =
             params={
                 "categories": FOOD_CATS,
                 "filter": f"circle:{lon},{lat},{radius}",
-                "limit": 30,
+                "limit": 50,
                 "apiKey": api_key,
             },
         )
@@ -369,7 +391,7 @@ async def _restaurants(lat: float, lon: float, api_key: str, display_name: str =
         for f in resp.json().get("features", []):
             p = f.get("properties", {})
             name = (p.get("name") or "").strip()
-            if not name:
+            if not name or _is_chain(name):
                 continue
             coords = f.get("geometry", {}).get("coordinates", [])
             out.append({

@@ -92,6 +92,11 @@ _CATEGORIES = ",".join([
     "sport.stadium",
     "production.winery",
     "production.brewery",
+    "entertainment.casino",
+    "entertainment.casino.poker",
+    "entertainment.casino.gaming",
+    "entertainment.nightclub",
+    "entertainment.casino.resort",
 ])
 
 
@@ -111,8 +116,8 @@ _POI_VALUE_ALLOWLIST: dict[str, set[str]] = {
                  "battlefield", "archaeological_site", "manor", "palace", "ship", "wreck",
                  "wayside_cross", "wayside_shrine"},
     "amenity":  {"place_of_worship", "theatre", "library", "arts_centre", "cinema", "townhall",
-                 "courthouse", "university", "college", "stadium", "concert_hall", "opera"},
-    "leisure":  {"park", "garden", "stadium", "sports_centre", "marina", "nature_reserve"},
+                 "courthouse", "university", "college", "stadium", "concert_hall", "opera", "casino"},
+    "leisure":  {"park", "garden", "stadium", "sports_centre", "marina", "nature_reserve", "casino"},
     "building": {"cathedral", "church", "chapel", "civic", "government", "skyscraper",
                  "commercial", "office", "stadium", "train_station", "synagogue", "mosque",
                  "temple", "public"},

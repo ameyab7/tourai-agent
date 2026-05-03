@@ -60,20 +60,43 @@ def _build_story_context(name: str, poi_type: str, tags: dict) -> str:
 
 
 async def _generate_story(name: str, poi_type: str, tags: dict, premium: bool = True) -> str:
-    from groq import AsyncGroq
     system = _STORY_SYSTEM_PREMIUM if premium else _STORY_SYSTEM_FREE
     async with metrics.timed("groq_story"):
-        client     = AsyncGroq(api_key=settings.groq_api_key)
-        completion = await client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user",   "content": _build_story_context(name, poi_type, tags)},
-            ],
-            max_tokens=180 if premium else 80,
-            temperature=0.8,
-        )
-    return completion.choices[0].message.content.strip()
+        t0 = time.perf_counter()
+        if settings.ollama_base_url:
+            import httpx
+            base = settings.ollama_base_url.rstrip("/")
+            if base.endswith("/v1"):
+                base = base[:-3]
+            payload = {
+                "model": settings.ollama_model,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user",   "content": _build_story_context(name, poi_type, tags)},
+                ],
+                "stream": False,
+                "think": False,
+                "options": {"temperature": 0.8, "num_predict": 180 if premium else 80},
+            }
+            async with httpx.AsyncClient(timeout=60.0) as http:
+                r = await http.post(f"{base}/api/chat", json=payload)
+                r.raise_for_status()
+            result = r.json().get("message", {}).get("content", "").strip()
+        else:
+            from groq import AsyncGroq
+            llm_client = AsyncGroq(api_key=settings.groq_api_key)
+            completion  = await llm_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user",   "content": _build_story_context(name, poi_type, tags)},
+                ],
+                max_tokens=180 if premium else 80,
+                temperature=0.8,
+            )
+            result = completion.choices[0].message.content.strip()
+        logger.info(f"[story] gemma response: {time.perf_counter() - t0:.1f}s")
+    return result
 
 
 def _check_premium(authorization: str | None) -> bool:

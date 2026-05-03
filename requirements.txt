@@ -4,11 +4,13 @@ uvicorn[standard]
 pydantic-settings
 prometheus_client
 
-# HTTP client (overpass, osrm)
+# HTTP client (overpass, osrm, narration)
 httpx
+aiohttp
 
 # AI visibility filter
 groq
+openai
 
 # Geospatial math (haversine, bearing, project_endpoint)
 geopy

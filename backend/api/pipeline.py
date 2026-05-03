@@ -57,9 +57,9 @@ class _PipelineLogHandler(logging.Handler):
 
 def _write_debug_files(plan_id: str, plan_dict: dict, log_records: list[dict]) -> None:
     os.makedirs(_DEBUG_DIR, exist_ok=True)
-    with open(os.path.join(_DEBUG_DIR, f"plan_{plan_id}.json"), "w") as f:
+    with open(os.path.join(_DEBUG_DIR, f"plan_{plan_id}.json"), "w", encoding="utf-8") as f:
         json.dump(plan_dict, f, indent=2, ensure_ascii=False)
-    with open(os.path.join(_DEBUG_DIR, f"logs_{plan_id}.json"), "w") as f:
+    with open(os.path.join(_DEBUG_DIR, f"logs_{plan_id}.json"), "w", encoding="utf-8") as f:
         json.dump(log_records, f, indent=2, ensure_ascii=False)
 
 from fastapi import APIRouter, Header

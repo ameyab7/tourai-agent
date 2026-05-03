@@ -1,15 +1,5 @@
-"""tourai/narration/narrator.py
-
-Stage 3: narrate the skeleton. Two parallel work streams:
-
-  A) Per-day narration: tips, rain_plan, day_label, restaurant picks for meals
-  B) Trip-level narration: title, summary, highlights, area description, budget notes
-
-Both use Groq (Llama 3.3 70B) for warm prose. Cerebras would also work but Groq's
-model is tuned better for creative writing IMO. Easy to swap.
-
-Each call is small and focused — schema validation is reliable on small outputs.
-If day 3 fails, we retry day 3, not the whole plan.
+"""
+tourai/narration/narrator.py
 """
 
 from __future__ import annotations
@@ -18,6 +8,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 
 import aiohttp
 import groq
@@ -29,11 +20,15 @@ from solver.skeleton import Skeleton, SkeletonDay
 
 logger = logging.getLogger("tourai.narration")
 
-_USE_GEMINI = bool(settings.gemini_api_key)
+_USE_OLLAMA  = bool(settings.ollama_base_url)
+_OLLAMA_MODEL = settings.ollama_model
+_USE_GEMINI  = bool(settings.gemini_api_key)
 _GEMINI_MODEL = "gemma-4-26b-a4b-it"
-_GROQ_MODEL = "llama-3.3-70b-versatile"
+_GROQ_MODEL  = "llama-3.3-70b-versatile"
 
-if _USE_GEMINI:
+if _USE_OLLAMA:
+    logger.info(f"Using Ollama with model {_OLLAMA_MODEL} at {settings.ollama_base_url}")
+elif _USE_GEMINI:
     logger.info(f"Using Gemini API with model {_GEMINI_MODEL}")
 else:
     logger.info(f"Using Groq with model {_GROQ_MODEL}")
@@ -274,12 +269,53 @@ The highlights array must include 2-3 of the most iconic stops from the overview
 
 # ── LLM call helper ───────────────────────────────────────────────────────────
 
+def _ollama_api_url() -> str:
+    base = settings.ollama_base_url.rstrip("/")
+    if base.endswith("/v1"):
+        base = base[:-3]
+    return f"{base}/api/chat"
+
+
+async def _call_ollama(system: str, user: str, max_tokens: int, label: str, temperature: float = 0.5) -> dict | None:
+    url = _ollama_api_url()
+    payload = {
+        "model": _OLLAMA_MODEL,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user",   "content": user},
+        ],
+        "stream": False,
+        "think": False,
+        "format": "json",
+        "options": {"temperature": temperature, "num_predict": max_tokens},
+    }
+    try:
+        t0 = time.perf_counter()
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=120)) as resp:
+                if resp.status != 200:
+                    logger.warning(f"Ollama error for {label}: {resp.status} — {await resp.text()}")
+                    return None
+                data = await resp.json()
+        logger.info(f"[narration] gemma response: {time.perf_counter() - t0:.1f}s ({label})")
+        content = data.get("message", {}).get("content", "")
+        return json.loads(content)
+    except json.JSONDecodeError as exc:
+        logger.warning(f"Ollama returned invalid JSON for {label!r} — {exc}")
+        return None
+    except Exception as exc:
+        logger.warning(f"Ollama call failed for {label!r} — {exc}")
+        return None
+
+
 async def _call_groq(system: str, user: str, max_tokens: int, label: str, model: str = _GROQ_MODEL, temperature: float = 0.5, max_retries: int = 3) -> dict | None:
     last_error = None
 
     for attempt in range(max_retries):
         try:
-            if _USE_GEMINI:
+            if _USE_OLLAMA:
+                return await _call_ollama(system, user, max_tokens, label, temperature)
+            elif _USE_GEMINI:
                 return await _call_gemini(system, user, max_tokens, label, temperature)
             else:
                 client = groq.AsyncGroq(api_key=settings.groq_api_key)
@@ -342,9 +378,6 @@ async def _call_gemini(system: str, user: str, max_tokens: int, label: str, temp
             content = data["candidates"][0]["content"]["parts"][0]["text"]
             return json.loads(content)
 
-    logger.error(f"Narration for {label!r} failed after {max_retries} retries — {last_error}")
-    return None
-
 
 # ── Public entry points ───────────────────────────────────────────────────────
 
@@ -380,7 +413,7 @@ async def narrate_replanned_day(
         f"[REPLAN] This day was just regenerated. Reason: {reason}. Changes: {summary}\n\n"
         + _build_day_prompt(day_index, day, bundle, interests)
     )
-    return await _call_groq(system, user, max_tokens=2500, label=f"replan_day_{day_index}", model=_REPLAN_MODEL, temperature=0.7)
+    return await _call_groq(system, user, max_tokens=2500, label=f"replan_day_{day_index}", model=_GROQ_MODEL, temperature=0.7)
 
 
 async def narrate_trip(

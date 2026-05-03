@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     groq_api_key:      str = Field(..., alias="GROQ_API_KEY")
     gemini_api_key:    str = Field("", alias="GEMINI_API_KEY")
     cerebras_api_key:  str = Field("", alias="CEREBRAS_API_KEY")
+    ollama_base_url:   str = Field("", alias="OLLAMA_BASE_URL")
+    ollama_model:      str = Field("gemma4:26b", alias="OLLAMA_MODEL")
     geoapify_api_key: str = Field("", alias="GEOAPIFY_API_KEY")
 
     supabase_url:         str = Field("", alias="SUPABASE_URL")

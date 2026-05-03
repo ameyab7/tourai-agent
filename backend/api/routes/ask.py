@@ -64,19 +64,41 @@ async def ask(body: AskRequest) -> AskResponse:
     )
 
     try:
-        from groq import AsyncGroq
         async with metrics.timed("groq_ask"):
-            client     = AsyncGroq(api_key=settings.groq_api_key)
-            completion = await client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[
-                    {"role": "system", "content": _SYSTEM_PROMPT},
-                    {"role": "user",   "content": user_message},
-                ],
-                max_tokens=200,
-                temperature=0.7,
-            )
-        answer = completion.choices[0].message.content.strip()
+            t0 = time.perf_counter()
+            if settings.ollama_base_url:
+                import httpx
+                base = settings.ollama_base_url.rstrip("/")
+                if base.endswith("/v1"):
+                    base = base[:-3]
+                payload = {
+                    "model": settings.ollama_model,
+                    "messages": [
+                        {"role": "system", "content": _SYSTEM_PROMPT},
+                        {"role": "user",   "content": user_message},
+                    ],
+                    "stream": False,
+                    "think": False,
+                    "options": {"temperature": 0.7, "num_predict": 200},
+                }
+                async with httpx.AsyncClient(timeout=60.0) as http:
+                    r = await http.post(f"{base}/api/chat", json=payload)
+                    r.raise_for_status()
+                answer = r.json().get("message", {}).get("content", "").strip()
+            else:
+                from groq import AsyncGroq
+                llm_client = AsyncGroq(api_key=settings.groq_api_key)
+                completion  = await llm_client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[
+                        {"role": "system", "content": _SYSTEM_PROMPT},
+                        {"role": "user",   "content": user_message},
+                    ],
+                    max_tokens=200,
+                    temperature=0.7,
+                )
+                answer = completion.choices[0].message.content.strip()
+            logger.info(f"[ask] gemma response: {time.perf_counter() - t0:.1f}s")
     except Exception:
         logger.error("Ask endpoint error — returning 502 to client", extra={"exc": traceback.format_exc()})
         metrics.errors_total.labels(endpoint="/v1/ask", error_type="groq").inc()
