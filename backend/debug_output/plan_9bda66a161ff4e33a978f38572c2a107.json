@@ -1,0 +1,486 @@
+{
+  "title": "Five Days of Desert Peaks and Canyon Exploration in Las Vegas",
+  "summary": "A family trip that balances outdoor adventure, scenic hikes, and cultural exploration in the vibrant city of Las Vegas.",
+  "destination": "Las Vegas, Clark County, Nevada, United States",
+  "start_date": "2026-05-02",
+  "end_date": "2026-05-06",
+  "highlights": [
+    {
+      "name": "Sloan Canyon National Conservation Area",
+      "why_cant_skip": "The unique landscape of Sloan Canyon, with its dramatic peaks and scenic trails, offers breathtaking views and an unforgettable hiking experience.",
+      "emoji": "🏞️"
+    },
+    {
+      "name": "Areola Peak",
+      "why_cant_skip": "Reaching the summit of Areola Peak provides an exhilarating sense of accomplishment and panoramic views of the surrounding desert landscape.",
+      "emoji": "🏔️"
+    },
+    {
+      "name": "Allegro Park and Sonata Park",
+      "why_cant_skip": "Visiting these parks offers a chance to relax and unwind in beautiful outdoor settings, providing a nice contrast to the hustle and bustle of city life.",
+      "emoji": "🌳"
+    }
+  ],
+  "accommodation": {
+    "name": "Bo's Place",
+    "stars": "",
+    "reason": "Bo's Place is chosen for its convenient location, allowing easy access to the various outdoor destinations and activities planned for the trip.",
+    "booking_url": "https://www.booking.com/search.html?ss=Las+Vegas%2C+Clark+County%2C+Nevada%2C+United+States&checkin=2026-05-02&checkout=2026-05-06"
+  },
+  "budget": {
+    "accommodation_usd": 500,
+    "food_usd": 350,
+    "activities_usd": 200,
+    "transport_usd": 150,
+    "total_usd": 1200,
+    "notes": "Fuel costs for desert drives and potential entrance fees for national conservation areas should be factored into the overall budget."
+  },
+  "days": [
+    {
+      "date": "2026-05-02",
+      "day_label": "Day 1 — Downtown and Culture",
+      "rain_plan": "If it rains: head to the Carson Kitchen early and grab a seat by the window to watch the rain while you dine",
+      "weather": {
+        "description": "Overcast",
+        "temp_high_c": 30.7,
+        "temp_low_c": 15.2,
+        "is_clear": false
+      },
+      "stops": [
+        {
+          "poi_id": "hotel-checkin",
+          "name": "Bo's Place",
+          "poi_type": "accommodation",
+          "arrival_time": "14:00",
+          "duration_min": 30,
+          "is_meal": false,
+          "lat": 36.116085747589835,
+          "lon": -115.11567461558796,
+          "tip": "Ask for a room with a view of the city — it's worth the extra few minutes at check-in",
+          "best_time": "Right at 2 PM — beat the late check-in crowds",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "arrive",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "a3",
+          "name": "22 LA-SL Sloan AKA Enterprize arrow",
+          "poi_type": "attraction",
+          "arrival_time": "15:00",
+          "duration_min": 60,
+          "is_meal": false,
+          "lat": 35.9532366,
+          "lon": -115.17934429999998,
+          "tip": "Look for the unique rock formations near the historic ruins — they're easy to miss but make for great photos",
+          "best_time": "Late afternoon — the overcast sky makes for softer light",
+          "crowd_level": "high",
+          "skip_if_rushed": true,
+          "transit_from_prev": {
+            "mode": "drive",
+            "duration_min": 74
+          }
+        },
+        {
+          "poi_id": "meal-dinner-2026-05-02",
+          "name": "Carson Kitchen",
+          "poi_type": "meal",
+          "arrival_time": "19:00",
+          "duration_min": 90,
+          "is_meal": true,
+          "lat": 36.16786149975262,
+          "lon": -115.14058002110244,
+          "tip": "Order the burger and ask for it to be cooked rare — it's not on the menu but they'll do it if you ask",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-05-03",
+      "day_label": "Day 2 — Exploring Peaks and Flavors",
+      "rain_plan": "If it rains: consider an indoor alternative for the peak visit, such as a local museum or café",
+      "weather": {
+        "description": "Overcast",
+        "temp_high_c": 33.1,
+        "temp_low_c": 17.7,
+        "is_clear": false
+      },
+      "stops": [
+        {
+          "poi_id": "meal-breakfast-2026-05-03",
+          "name": "Broken Yolk Café",
+          "poi_type": "meal",
+          "arrival_time": "08:30",
+          "duration_min": 45,
+          "is_meal": true,
+          "lat": 36.16770239975261,
+          "lon": -115.14127210096774,
+          "tip": "Try the breakfast burrito with extra salsa — it's a local favorite",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "arrive",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "a6",
+          "name": "Areola Peak",
+          "poi_type": "peak",
+          "arrival_time": "10:00",
+          "duration_min": 60,
+          "is_meal": false,
+          "lat": 35.9689612,
+          "lon": -115.0052753,
+          "tip": "Look for unique rock formations on the peak's north side — they're often missed by most hikers",
+          "best_time": "Early morning for cooler temperatures and clearer views",
+          "crowd_level": "medium",
+          "skip_if_rushed": true,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "meal-lunch-2026-05-03",
+          "name": "Carson Kitchen",
+          "poi_type": "meal",
+          "arrival_time": "12:30",
+          "duration_min": 60,
+          "is_meal": true,
+          "lat": 36.16786149975262,
+          "lon": -115.14058002110244,
+          "tip": "Order the fried chicken and waffles — it's a surprising combination that works incredibly well",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "meal-dinner-2026-05-03",
+          "name": "Gallagher's Steakhouse",
+          "poi_type": "meal",
+          "arrival_time": "19:00",
+          "duration_min": 90,
+          "is_meal": true,
+          "lat": 36.10258514974589,
+          "lon": -115.17474349983064,
+          "tip": "Ask for a table near the window and order the dry-aged steak — the view and the meal are unforgettable",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-05-04",
+      "day_label": "Day 3 — Exploring Henderson",
+      "rain_plan": "If it rains: consider a shorter hike at Sloan Canyon National Conservation Area and allocate more time for lunch or dinner",
+      "weather": {
+        "description": "Overcast",
+        "temp_high_c": 23.4,
+        "temp_low_c": 17.9,
+        "is_clear": false
+      },
+      "stops": [
+        {
+          "poi_id": "meal-breakfast-2026-05-04",
+          "name": "Broken Yolk Café",
+          "poi_type": "meal",
+          "arrival_time": "08:30",
+          "duration_min": 45,
+          "is_meal": true,
+          "lat": 36.16770239975261,
+          "lon": -115.14127210096774,
+          "tip": "Try the breakfast burrito with scrambled eggs and chorizo — it's a local favorite",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "arrive",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "a0",
+          "name": "Sloan Canyon National Conservation Area",
+          "poi_type": "park",
+          "arrival_time": "10:00",
+          "duration_min": 60,
+          "is_meal": false,
+          "lat": 35.91049382201719,
+          "lon": -115.0483629895287,
+          "tip": "Take the shorter loop trail to avoid the crowd and notice the unique petroglyphs on the rocks",
+          "best_time": "Right at opening — the overcast weather will make for better photography conditions",
+          "crowd_level": "low",
+          "skip_if_rushed": true,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "meal-lunch-2026-05-04",
+          "name": "Pizza Rock - Downtown",
+          "poi_type": "meal",
+          "arrival_time": "12:30",
+          "duration_min": 60,
+          "is_meal": true,
+          "lat": 36.16786149975262,
+          "lon": -115.14058002110244,
+          "tip": "Order the burger with the truffle aioli — it's a unique twist on a classic",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "meal-dinner-2026-05-04",
+          "name": "Gallagher's Steakhouse",
+          "poi_type": "meal",
+          "arrival_time": "19:00",
+          "duration_min": 90,
+          "is_meal": true,
+          "lat": 36.10258514974589,
+          "lon": -115.17474349983064,
+          "tip": "Ask for a table near the window and order the dry-aged steak — it's their specialty",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-05-05",
+      "day_label": "Day 4 — Parks and Relaxation",
+      "rain_plan": "If it rains: consider visiting an indoor attraction or a museum instead of the parks",
+      "weather": {
+        "description": "Overcast",
+        "temp_high_c": 22.9,
+        "temp_low_c": 14.0,
+        "is_clear": false
+      },
+      "stops": [
+        {
+          "poi_id": "meal-breakfast-2026-05-05",
+          "name": "Pizza Rock - Downtown",
+          "poi_type": "meal",
+          "arrival_time": "08:30",
+          "duration_min": 45,
+          "is_meal": true,
+          "lat": 36.16770239975261,
+          "lon": -115.14127210096774,
+          "tip": "Order the breakfast burrito with extra salsa — it's a local favorite and pairs well with their coffee",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "arrive",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "a1",
+          "name": "Allegro Park",
+          "poi_type": "park",
+          "arrival_time": "10:00",
+          "duration_min": 60,
+          "is_meal": false,
+          "lat": 35.98940160873255,
+          "lon": -115.12247808910634,
+          "tip": "Walk the outer path first to get a sense of the park's layout, then explore the inner gardens",
+          "best_time": "Early morning, just after opening, for a peaceful atmosphere",
+          "crowd_level": "low",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "meal-lunch-2026-05-05",
+          "name": "Denny's",
+          "poi_type": "meal",
+          "arrival_time": "12:30",
+          "duration_min": 60,
+          "is_meal": true,
+          "lat": 36.16786149975262,
+          "lon": -115.14058002110244,
+          "tip": "Try the grilled cheese and tomato soup combo — it's a comforting, satisfying choice for a cloudy day",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "a2",
+          "name": "Sonata Park",
+          "poi_type": "park",
+          "arrival_time": "14:00",
+          "duration_min": 60,
+          "is_meal": false,
+          "lat": 35.97573372282921,
+          "lon": -115.12114159814206,
+          "tip": "Look for the unique sculptures and public art installations scattered throughout the park",
+          "best_time": "Late morning to early afternoon, when the overcast sky provides soft, diffused light",
+          "crowd_level": "medium",
+          "skip_if_rushed": true,
+          "transit_from_prev": {
+            "mode": "uber",
+            "duration_min": 18
+          }
+        },
+        {
+          "poi_id": "meal-dinner-2026-05-05",
+          "name": "Weera Thai",
+          "poi_type": "meal",
+          "arrival_time": "19:00",
+          "duration_min": 90,
+          "is_meal": true,
+          "lat": 36.14405889975015,
+          "lon": -115.19332529999997,
+          "tip": "Ask for the spicy level to be adjusted to your taste — the staff is happy to accommodate preferences",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-05-06",
+      "day_label": "Day 5 — Mountain Peaks and Departure",
+      "rain_plan": "If it rains: consider an indoor alternative, such as a local museum or shopping center, as the peaks may be hazardous",
+      "weather": {
+        "description": "Clear sky",
+        "temp_high_c": 30.2,
+        "temp_low_c": 18.3,
+        "is_clear": true
+      },
+      "stops": [
+        {
+          "poi_id": "meal-breakfast-2026-05-06",
+          "name": "Denny's",
+          "poi_type": "meal",
+          "arrival_time": "08:30",
+          "duration_min": 45,
+          "is_meal": true,
+          "lat": 36.16770239975261,
+          "lon": -115.14127210096774,
+          "tip": "Order the breakfast burrito with scrambled eggs and chorizo — it's a local favorite and pairs well with their fresh coffee",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "arrive",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "a5",
+          "name": "Peak 3920+",
+          "poi_type": "peak",
+          "arrival_time": "10:00",
+          "duration_min": 60,
+          "is_meal": false,
+          "lat": 35.9600599,
+          "lon": -115.0321945,
+          "tip": "Take a moment to notice the unique rock formations at the summit — they offer great photo opportunities",
+          "best_time": "Right at 10 AM for clear views and cooler temperatures",
+          "crowd_level": "low",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "a4",
+          "name": "Peak 3382",
+          "poi_type": "peak",
+          "arrival_time": "10:30",
+          "duration_min": 60,
+          "is_meal": false,
+          "lat": 35.9746134,
+          "lon": -115.0247321,
+          "tip": "Look for the small cave on the eastern side of the peak — it's easy to miss but offers a great spot for a short rest",
+          "best_time": "Before 11:30 AM to avoid the heat and potential crowds",
+          "crowd_level": "low",
+          "skip_if_rushed": true,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 5
+          }
+        },
+        {
+          "poi_id": "hotel-checkout",
+          "name": "Bo's Place",
+          "poi_type": "accommodation",
+          "arrival_time": "11:00",
+          "duration_min": 30,
+          "is_meal": false,
+          "lat": 36.116085747589835,
+          "lon": -115.11567461558796,
+          "tip": "Double-check that you have all your belongings before leaving the hotel — it's easy to forget something in the rush",
+          "best_time": "Exactly at 11 AM to ensure a smooth checkout process",
+          "crowd_level": "low",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "drive",
+            "duration_min": 55
+          }
+        },
+        {
+          "poi_id": "meal-lunch-2026-05-06",
+          "name": "Weera Thai",
+          "poi_type": "meal",
+          "arrival_time": "12:30",
+          "duration_min": 60,
+          "is_meal": true,
+          "lat": 36.16786149975262,
+          "lon": -115.14058002110244,
+          "tip": "Try the grilled cheese and tomato soup — it's a creative twist on a classic comfort food and pairs well with their craft beers",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        }
+      ]
+    }
+  ],
+  "getting_there": {
+    "flights_url": "https://www.google.com/travel/flights?q=Flights+to+Las+Vegas%2C+Clark+County%2C+Nevada%2C+United+States"
+  }
+}

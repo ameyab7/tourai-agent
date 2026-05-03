@@ -1,0 +1,504 @@
+{
+  "title": "Texas Suburban Charm and Community Events",
+  "summary": "Experience the warm hospitality and community spirit of Plano, Texas, through its vibrant cultural events, scenic parks, and local landmarks.",
+  "destination": "Plano Texas",
+  "start_date": "2026-05-02",
+  "end_date": "2026-05-06",
+  "highlights": [
+    {
+      "name": "HUB 121 Amphitheater",
+      "why_cant_skip": "The outdoor amphitheater hosts various community events and concerts, offering a taste of local culture and entertainment under the stars.",
+      "emoji": "🎶"
+    },
+    {
+      "name": "Collin County Farm",
+      "why_cant_skip": "This working farm provides a unique glimpse into rural Texas life, with opportunities to interact with farm animals and learn about sustainable farming practices.",
+      "emoji": "🐄"
+    },
+    {
+      "name": "McKinney ISD Stadium",
+      "why_cant_skip": "Catch a high school sports event or concert at this lively stadium, which showcases the community's school spirit and enthusiasm for local athletics.",
+      "emoji": "🏈"
+    }
+  ],
+  "accommodation": {
+    "name": "Hampton Inn & Suites",
+    "stars": "",
+    "reason": "The Hampton Inn & Suites offers a comfortable and convenient base for exploring Plano, with easy access to local attractions and amenities.",
+    "booking_url": "https://www.booking.com/search.html?ss=Plano+Texas&checkin=2026-05-02&checkout=2026-05-06"
+  },
+  "budget": {
+    "accommodation_usd": 350,
+    "food_usd": 200,
+    "activities_usd": 50,
+    "transport_usd": 20,
+    "total_usd": 620,
+    "notes": "Prices in Plano are relatively affordable, but consider budgeting extra for any specific event or activity fees."
+  },
+  "days": [
+    {
+      "date": "2026-05-02",
+      "day_label": "Day 1 — Local Delights",
+      "rain_plan": "No changes needed for clear skies",
+      "weather": {
+        "description": "Clear sky",
+        "temp_high_c": 25.2,
+        "temp_low_c": 11.1,
+        "is_clear": true
+      },
+      "stops": [
+        {
+          "poi_id": "hotel-checkin",
+          "name": "Hampton Inn & Suites",
+          "poi_type": "accommodation",
+          "arrival_time": "14:00",
+          "duration_min": 30,
+          "is_meal": false,
+          "lat": 33.001689618676586,
+          "lon": -96.67454875169138,
+          "tip": "Head straight to your room to drop off your bags and freshen up — you can grab a coffee at a nearby café before heading out.",
+          "best_time": "Anytime",
+          "crowd_level": "low",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "arrive",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "a0",
+          "name": "HUB 121 Amphitheater",
+          "poi_type": "culture",
+          "arrival_time": "15:00",
+          "duration_min": 75,
+          "is_meal": false,
+          "lat": 33.13537599977417,
+          "lon": -96.7099536076208,
+          "tip": "Arrive early to grab a seat with a view of the stage — the amphitheater can fill up quickly on weekends.",
+          "best_time": "Right at 15:00 to secure a good seat",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "drive",
+            "duration_min": 48
+          }
+        },
+        {
+          "poi_id": "a3",
+          "name": "Millie Cooper Park",
+          "poi_type": "park",
+          "arrival_time": "16:00",
+          "duration_min": 75,
+          "is_meal": false,
+          "lat": 33.141767982858795,
+          "lon": -96.71573302930598,
+          "tip": "Bring a picnic to enjoy in the park — there are plenty of shaded areas and walking trails to explore.",
+          "best_time": "Late afternoon for a relaxing stroll",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 6
+          }
+        },
+        {
+          "poi_id": "a4",
+          "name": "Spicewood Park",
+          "poi_type": "park",
+          "arrival_time": "17:00",
+          "duration_min": 75,
+          "is_meal": false,
+          "lat": 33.142428472527314,
+          "lon": -96.71355529718777,
+          "tip": "Take a moment to appreciate the unique sculpture garden — it's easy to miss if you're just walking through.",
+          "best_time": "Golden hour (about 45 min before sunset) for great photos",
+          "crowd_level": "medium",
+          "skip_if_rushed": true,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 11
+          }
+        },
+        {
+          "poi_id": "meal-dinner-2026-05-02",
+          "name": "Love & War in Texas",
+          "poi_type": "meal",
+          "arrival_time": "19:00",
+          "duration_min": 90,
+          "is_meal": true,
+          "lat": 33.009501599587615,
+          "lon": -96.70632709964141,
+          "tip": "Try the Texas-style BBQ platter — it's a great way to sample local flavors.",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-05-03",
+      "day_label": "Day 2 of the trip",
+      "rain_plan": "If it rains: head to the indoor areas of Love & War in Texas or Dimassi's Mediterranean Buffet",
+      "weather": {
+        "description": "Overcast",
+        "temp_high_c": 29.0,
+        "temp_low_c": 15.3,
+        "is_clear": false
+      },
+      "stops": [
+        {
+          "poi_id": "meal-breakfast-2026-05-03",
+          "name": "Cafe Brazil",
+          "poi_type": "meal",
+          "arrival_time": "08:30",
+          "duration_min": 45,
+          "is_meal": true,
+          "lat": 32.977915199587734,
+          "lon": -96.71584858579376,
+          "tip": "Try their signature coffee cake — it's a local favorite and pairs well with breakfast",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "arrive",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "a8",
+          "name": "Collin County Farm",
+          "poi_type": "attraction",
+          "arrival_time": "10:00",
+          "duration_min": 75,
+          "is_meal": false,
+          "lat": 33.18486,
+          "lon": -96.6633,
+          "tip": "Arrive early to beat the heat and crowds; bring sunscreen and a hat",
+          "best_time": "Late morning, around 11:00 AM, for comfortable weather and smaller crowds",
+          "crowd_level": "medium",
+          "skip_if_rushed": true,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "meal-lunch-2026-05-03",
+          "name": "Love & War in Texas",
+          "poi_type": "meal",
+          "arrival_time": "12:30",
+          "duration_min": 60,
+          "is_meal": true,
+          "lat": 33.009501599587615,
+          "lon": -96.70632709964141,
+          "tip": "Order the Texas BBQ platter — it's a great representation of local flavors",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "meal-dinner-2026-05-03",
+          "name": "Dimassi's Mediterranean Buffet",
+          "poi_type": "meal",
+          "arrival_time": "19:00",
+          "duration_min": 90,
+          "is_meal": true,
+          "lat": 32.97595339958775,
+          "lon": -96.71967285,
+          "tip": "Try the baklava for dessert — it's freshly made and delicious",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-05-04",
+      "day_label": "Day 3",
+      "rain_plan": "",
+      "weather": {
+        "description": "Overcast",
+        "temp_high_c": 27.5,
+        "temp_low_c": 16.6,
+        "is_clear": false
+      },
+      "stops": [
+        {
+          "poi_id": "meal-breakfast-2026-05-04",
+          "name": "Cafe Brazil",
+          "poi_type": "meal",
+          "arrival_time": "08:30",
+          "duration_min": 45,
+          "is_meal": true,
+          "lat": 32.977915199587734,
+          "lon": -96.71584858579376,
+          "tip": "Try their signature coffee cake — it's a local favorite and goes well with their coffee.",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "arrive",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "a6",
+          "name": "McKinney ISD Stadium",
+          "poi_type": "stadium",
+          "arrival_time": "10:00",
+          "duration_min": 75,
+          "is_meal": false,
+          "lat": 33.157233486167534,
+          "lon": -96.66031063816979,
+          "tip": "Arrive early to grab a seat near the field for a better view of the stadium's architecture.",
+          "best_time": "Right at 10:00 AM to beat the crowds",
+          "crowd_level": "low",
+          "skip_if_rushed": true,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "meal-lunch-2026-05-04",
+          "name": "Olive Garden",
+          "poi_type": "meal",
+          "arrival_time": "12:30",
+          "duration_min": 60,
+          "is_meal": true,
+          "lat": 33.009501599587615,
+          "lon": -96.70632709964141,
+          "tip": "Order the Texas BBQ platter — it's a great way to sample local flavors.",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "meal-dinner-2026-05-04",
+          "name": "Dimassi's Mediterranean Buffet",
+          "poi_type": "meal",
+          "arrival_time": "19:00",
+          "duration_min": 90,
+          "is_meal": true,
+          "lat": 32.97595339958775,
+          "lon": -96.71967285,
+          "tip": "Head straight to the mezzanine level for the best selection of Mediterranean dishes.",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-05-05",
+      "day_label": "Day 4",
+      "rain_plan": "If it rains: consider visiting Emerson High School Stadium or McKinney Soccer Complex at Craig Ranch instead of outdoor activities",
+      "weather": {
+        "description": "Light drizzle",
+        "temp_high_c": 29.3,
+        "temp_low_c": 19.6,
+        "is_clear": false
+      },
+      "stops": [
+        {
+          "poi_id": "meal-breakfast-2026-05-05",
+          "name": "Olive Garden",
+          "poi_type": "meal",
+          "arrival_time": "08:30",
+          "duration_min": 45,
+          "is_meal": true,
+          "lat": 32.977915199587734,
+          "lon": -96.71584858579376,
+          "tip": "Try their signature coffee cake — it's a local favorite and pairs well with a light drizzle",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "arrive",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "a5",
+          "name": "Emerson High School Stadium",
+          "poi_type": "stadium",
+          "arrival_time": "10:00",
+          "duration_min": 75,
+          "is_meal": false,
+          "lat": 33.14811358608058,
+          "lon": -96.69752953544563,
+          "tip": "Arrive early to grab a seat with a view of the field — it's a great spot to people-watch",
+          "best_time": "Right at 10:00 AM — before the morning crowds",
+          "crowd_level": "low",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "meal-lunch-2026-05-05",
+          "name": "Fox & Hound",
+          "poi_type": "meal",
+          "arrival_time": "12:30",
+          "duration_min": 60,
+          "is_meal": true,
+          "lat": 33.009501599587615,
+          "lon": -96.70632709964141,
+          "tip": "Order the Texas BBQ platter — it's a great way to sample local flavors",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "a2",
+          "name": "McKinney Soccer Complex at Craig Ranch",
+          "poi_type": "park",
+          "arrival_time": "14:00",
+          "duration_min": 75,
+          "is_meal": false,
+          "lat": 33.142493411829165,
+          "lon": -96.69983206183474,
+          "tip": "Take a stroll around the park's walking trails — the light drizzle makes it a refreshing walk",
+          "best_time": "Just after 2:00 PM — the afternoon sun isn't too harsh",
+          "crowd_level": "medium",
+          "skip_if_rushed": true,
+          "transit_from_prev": {
+            "mode": "uber",
+            "duration_min": 17
+          }
+        },
+        {
+          "poi_id": "meal-dinner-2026-05-05",
+          "name": "La La Land",
+          "poi_type": "meal",
+          "arrival_time": "19:00",
+          "duration_min": 90,
+          "is_meal": true,
+          "lat": 32.97595339958775,
+          "lon": -96.71967285,
+          "tip": "Try the shawarma — it's a popular item and pairs well with a variety of sides",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-05-06",
+      "day_label": "Day 5 — Cemetery and Local Eats",
+      "rain_plan": "If it rains heavily: consider a longer stay at Love & War in Texas for their great coffee and indoor seating",
+      "weather": {
+        "description": "Drizzle",
+        "temp_high_c": 31.9,
+        "temp_low_c": 11.7,
+        "is_clear": false
+      },
+      "stops": [
+        {
+          "poi_id": "meal-breakfast-2026-05-06",
+          "name": "Fox & Hound",
+          "poi_type": "meal",
+          "arrival_time": "08:30",
+          "duration_min": 45,
+          "is_meal": true,
+          "lat": 32.977915199587734,
+          "lon": -96.71584858579376,
+          "tip": "Try their signature coffee cake — it's a local favorite and pairs perfectly with a morning drizzle.",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "arrive",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "a7",
+          "name": "Williams Cemetery",
+          "poi_type": "attraction",
+          "arrival_time": "10:00",
+          "duration_min": 75,
+          "is_meal": false,
+          "lat": 33.1708,
+          "lon": -96.66724,
+          "tip": "Bring a waterproof jacket and comfortable shoes; the drizzle might make the cemetery paths slippery.",
+          "best_time": "Late morning, just before noon — usually quieter than afternoons",
+          "crowd_level": "low",
+          "skip_if_rushed": true,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "hotel-checkout",
+          "name": "Hampton Inn & Suites",
+          "poi_type": "accommodation",
+          "arrival_time": "11:00",
+          "duration_min": 30,
+          "is_meal": false,
+          "lat": 33.001689618676586,
+          "lon": -96.67454875169138,
+          "tip": "Double-check your room for any forgotten items before leaving; the Hampton Inn staff is helpful but busy.",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "drive",
+            "duration_min": 49
+          }
+        },
+        {
+          "poi_id": "meal-lunch-2026-05-06",
+          "name": "La La Land",
+          "poi_type": "meal",
+          "arrival_time": "12:30",
+          "duration_min": 60,
+          "is_meal": true,
+          "lat": 33.009501599587615,
+          "lon": -96.70632709964141,
+          "tip": "Ask for the daily specials — they often feature local ingredients and unique Texas twists on classic dishes.",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        }
+      ]
+    }
+  ],
+  "getting_there": {
+    "flights_url": "https://www.google.com/travel/flights?q=Flights+to+Plano+Texas"
+  }
+}

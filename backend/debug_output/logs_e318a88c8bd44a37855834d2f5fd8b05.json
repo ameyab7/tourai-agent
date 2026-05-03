@@ -1,0 +1,255 @@
+[
+  {
+    "time": "02:49:27",
+    "level": "INFO",
+    "logger": "tourai.pipeline",
+    "message": "Starting itinerary pipeline for 'Dallas Tx'",
+    "extra": {
+      "req_id": "e318a88c",
+      "plan_id": "e318a88c8bd44a37855834d2f5fd8b05"
+    }
+  },
+  {
+    "time": "02:49:27",
+    "level": "INFO",
+    "logger": "tourai.api",
+    "message": "POST /v2/itinerary/stream → 200 in 320ms (from 192.168.1.15)"
+  },
+  {
+    "time": "02:49:28",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: GET https://api.geoapify.com/v1/geocode/search?text=Dallas+Tx&apiKey=b027461a7b574aadbee660527afb7a02&limit=5&format=json \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "02:49:28",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: GET https://api.geoapify.com/v2/places?categories=accommodation.hotel%2Caccommodation.guest_house%2Caccommodation.hostel%2Caccommodation.motel&filter=circle%3A-96.7968559%2C32.7762719%2C10000&limit=10&apiKey=b027461a7b574aadbee660527afb7a02 \"HTTP/2 200 OK\""
+  },
+  {
+    "time": "02:49:28",
+    "level": "INFO",
+    "logger": "tourai.prefetch",
+    "message": "Hotels: 5 found within 10000m for 'Dallas'"
+  },
+  {
+    "time": "02:49:28",
+    "level": "INFO",
+    "logger": "tourai.prefetch",
+    "message": "Picked hotel: Residence Inn at (32.76591738114604, -96.8761496444611)"
+  },
+  {
+    "time": "02:49:29",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: GET https://api.open-meteo.com/v1/forecast?latitude=32.7762719&longitude=-96.7968559&daily=temperature_2m_max%2Ctemperature_2m_min%2Cweather_code%2Csunrise%2Csunset&timezone=auto&forecast_days=16 \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "02:49:29",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: GET https://api.geoapify.com/v2/places?categories=tourism.sights%2Ctourism.sights.castle%2Ctourism.sights.ruines%2Ctourism.sights.fort%2Ctourism.sights.memorial%2Ctourism.sights.tower%2Ctourism.attraction%2Ctourism.attraction.viewpoint%2Centertainment.museum%2Centertainment.culture.gallery%2Centertainment.culture.theatre%2Centertainment.culture.arts_centre%2Centertainment.cinema%2Centertainment.theme_park%2Centertainment.aquarium%2Centertainment.zoo%2Cleisure.park%2Cleisure.park.nature_reserve%2Cnational_park%2Cnatural.mountain.peak%2Cbeach%2Ccatering.restaurant%2Ccatering.cafe%2Ccatering.bar%2Ccatering.pub%2Csport.stadium%2Cproduction.winery%2Cproduction.brewery&filter=circle%3A-96.7968559%2C32.7762719%2C30000&limit=100&apiKey=b027461a7b574aadbee660527afb7a02 \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "02:49:30",
+    "level": "INFO",
+    "logger": "utils.geoapify_places",
+    "message": "Fetched 32 POIs from Geoapify at (32.7762719, -96.7968559)"
+  },
+  {
+    "time": "02:49:30",
+    "level": "INFO",
+    "logger": "tourai.prefetch",
+    "message": "POI diagnostic: 'Dallas' outcome=no_refetch_needed final=13",
+    "extra": {
+      "diagnostic": {
+        "initial_count": 32,
+        "initial_radius": 30000,
+        "did_refetch": false,
+        "refetch_count": 0,
+        "refetch_radius": 0,
+        "final_count": 13,
+        "refetch_outcome": "no_refetch_needed"
+      }
+    }
+  },
+  {
+    "time": "02:49:30",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: GET https://api.geoapify.com/v2/places?categories=catering.restaurant%2Ccatering.cafe%2Ccatering.bar%2Ccatering.pub&filter=circle%3A-96.8761496444611%2C32.76591738114604%2C12000&limit=30&apiKey=b027461a7b574aadbee660527afb7a02 \"HTTP/2 200 OK\""
+  },
+  {
+    "time": "02:49:31",
+    "level": "INFO",
+    "logger": "tourai.prefetch",
+    "message": "Restaurants: 30 found within 12000m for 'Dallas'"
+  },
+  {
+    "time": "02:49:31",
+    "level": "INFO",
+    "logger": "tourai.prefetch",
+    "message": "Prefetch complete for 'Dallas Tx' — 13 attractions, 20 restaurants around hotel, 5 hotels, 6 days of weather",
+    "extra": {
+      "fetch_errors": {},
+      "matrix_points": 38,
+      "hotel_center": [
+        32.76591738114604,
+        -96.8761496444611
+      ]
+    }
+  },
+  {
+    "time": "02:49:31",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "02:49:31",
+    "level": "INFO",
+    "logger": "tourai.scorer",
+    "message": "Scored 13/13 POIs"
+  },
+  {
+    "time": "02:49:31",
+    "level": "INFO",
+    "logger": "tourai.solver",
+    "message": "Skeleton built — 13 POIs across 6 days, hotel: Residence Inn, drive tolerance: 60min",
+    "extra": {
+      "poi_count": 13,
+      "cluster_sizes": [
+        2,
+        1,
+        2,
+        3,
+        4,
+        1
+      ],
+      "drive_tol_min": 60,
+      "hotel_picked": "Residence Inn"
+    }
+  },
+  {
+    "time": "02:49:32",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "02:49:33",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "02:49:33",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "02:49:33",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "02:49:33",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "02:49:33",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "02:49:33",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "02:49:33",
+    "level": "INFO",
+    "logger": "tourai.validation",
+    "message": "Swapped duplicate restaurant \"Mama's Daughters\" with 'Texas de Brazil' (reason: appeared too many times in the trip)"
+  },
+  {
+    "time": "02:49:33",
+    "level": "INFO",
+    "logger": "tourai.validation",
+    "message": "Swapped duplicate restaurant 'Texas de Brazil' with 'Campuzano Mexican Food' (reason: same day duplicate)"
+  },
+  {
+    "time": "02:49:33",
+    "level": "INFO",
+    "logger": "tourai.validation",
+    "message": "Swapped duplicate restaurant \"Mama's Daughters\" with 'Texas de Brazil' (reason: appeared too many times in the trip)"
+  },
+  {
+    "time": "02:49:33",
+    "level": "INFO",
+    "logger": "tourai.validation",
+    "message": "Swapped duplicate restaurant 'Pecan Lodge' with 'Campuzano Mexican Food' (reason: appeared too many times in the trip)"
+  },
+  {
+    "time": "02:49:33",
+    "level": "INFO",
+    "logger": "tourai.validation",
+    "message": "Swapped duplicate restaurant 'Texas de Brazil' with \"Chip's Old Fashioned Hamburger\" (reason: same day duplicate)"
+  },
+  {
+    "time": "02:49:33",
+    "level": "INFO",
+    "logger": "tourai.validation",
+    "message": "Swapped duplicate restaurant \"Mama's Daughters\" with \"Chip's Old Fashioned Hamburger\" (reason: appeared too many times in the trip)"
+  },
+  {
+    "time": "02:49:33",
+    "level": "INFO",
+    "logger": "tourai.validation",
+    "message": "Swapped duplicate restaurant 'Pecan Lodge' with \"Mason's Chicken and Seafood\" (reason: appeared too many times in the trip)"
+  },
+  {
+    "time": "02:49:33",
+    "level": "INFO",
+    "logger": "tourai.validation",
+    "message": "Swapped duplicate restaurant \"Mama's Daughters\" with \"Mason's Chicken and Seafood\" (reason: appeared too many times in the trip)"
+  },
+  {
+    "time": "02:49:33",
+    "level": "INFO",
+    "logger": "tourai.validation",
+    "message": "Swapped duplicate restaurant 'Pecan Lodge' with 'Baby Dolls Saloon Strip Club' (reason: appeared too many times in the trip)"
+  },
+  {
+    "time": "02:49:33",
+    "level": "WARNING",
+    "logger": "tourai.validation",
+    "message": "Plan constraint violations detected — [\"2026-05-02 Plano Children's Theater: drive 102min > tol 60\", '2026-05-07 Residence Inn: drive 101min > tol 60']"
+  },
+  {
+    "time": "02:49:33",
+    "level": "INFO",
+    "logger": "tourai.pipeline",
+    "message": "Pipeline complete for 'Dallas Tx' in 6.17s",
+    "extra": {
+      "req_id": "e318a88c",
+      "plan_id": "e318a88c8bd44a37855834d2f5fd8b05"
+    }
+  },
+  {
+    "time": "02:49:33",
+    "level": "INFO",
+    "logger": "tourai.storage",
+    "message": "plan_saved",
+    "extra": {
+      "plan_id": "e318a88c8bd44a37855834d2f5fd8b05"
+    }
+  }
+]

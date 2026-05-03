@@ -1,0 +1,248 @@
+[
+  {
+    "time": "03:10:56",
+    "level": "INFO",
+    "logger": "tourai.pipeline",
+    "message": "Starting itinerary pipeline for 'Las Vegas, Clark County, Nevada, United States'",
+    "extra": {
+      "req_id": "9bda66a1",
+      "plan_id": "9bda66a161ff4e33a978f38572c2a107"
+    }
+  },
+  {
+    "time": "03:10:56",
+    "level": "INFO",
+    "logger": "tourai.api",
+    "message": "POST /v2/itinerary/stream → 200 in 842ms (from 192.168.1.15)"
+  },
+  {
+    "time": "03:10:56",
+    "level": "INFO",
+    "logger": "tourai.api",
+    "message": "Multi-city query detected: 'Las Vegas, Clark County, Nevada, United States' -> ['las vegas', 'clark county', 'nevada', 'united states']"
+  },
+  {
+    "time": "03:10:57",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: GET https://api.geoapify.com/v1/geocode/search?text=Las+Vegas%2C+Clark+County%2C+Nevada%2C+United+States&apiKey=b027461a7b574aadbee660527afb7a02&limit=5&format=json \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "03:10:57",
+    "level": "WARNING",
+    "logger": "tourai.prefetch",
+    "message": "Geocode warning for 'Las Vegas, Clark County, Nevada, United States':  Multi-city trip detected. Using first location only."
+  },
+  {
+    "time": "03:10:58",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: GET https://api.geoapify.com/v2/places?categories=accommodation.hotel%2Caccommodation.guest_house%2Caccommodation.hostel%2Caccommodation.motel&filter=circle%3A-115.1484131%2C36.1674263%2C10000&limit=10&apiKey=b027461a7b574aadbee660527afb7a02 \"HTTP/2 200 OK\""
+  },
+  {
+    "time": "03:10:58",
+    "level": "INFO",
+    "logger": "tourai.prefetch",
+    "message": "Hotels: 8 found within 10000m for 'Las Vegas'"
+  },
+  {
+    "time": "03:10:58",
+    "level": "INFO",
+    "logger": "tourai.prefetch",
+    "message": "Picked hotel: Bo's Place at (36.116085747589835, -115.11567461558796)"
+  },
+  {
+    "time": "03:10:59",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: GET https://api.open-meteo.com/v1/forecast?latitude=36.1674263&longitude=-115.1484131&daily=temperature_2m_max%2Ctemperature_2m_min%2Cweather_code%2Csunrise%2Csunset&timezone=auto&forecast_days=16 \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "03:10:59",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: GET https://api.geoapify.com/v2/places?categories=tourism.sights%2Ctourism.sights.castle%2Ctourism.sights.ruines%2Ctourism.sights.fort%2Ctourism.sights.memorial%2Ctourism.sights.tower%2Ctourism.attraction%2Ctourism.attraction.viewpoint%2Centertainment.museum%2Centertainment.culture.gallery%2Centertainment.culture.theatre%2Centertainment.culture.arts_centre%2Centertainment.cinema%2Centertainment.theme_park%2Centertainment.aquarium%2Centertainment.zoo%2Cleisure.park%2Cleisure.park.nature_reserve%2Cnational_park%2Cnatural.mountain.peak%2Cbeach%2Ccatering.restaurant%2Ccatering.cafe%2Ccatering.bar%2Ccatering.pub%2Csport.stadium%2Cproduction.winery%2Cproduction.brewery&filter=circle%3A-115.1484131%2C36.1674263%2C30000&limit=100&apiKey=b027461a7b574aadbee660527afb7a02 \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "03:10:59",
+    "level": "INFO",
+    "logger": "utils.geoapify_places",
+    "message": "Fetched 31 POIs from Geoapify at (36.1674263, -115.1484131)"
+  },
+  {
+    "time": "03:10:59",
+    "level": "INFO",
+    "logger": "tourai.prefetch",
+    "message": "POI diagnostic: 'Las Vegas' outcome=no_refetch_needed final=7",
+    "extra": {
+      "diagnostic": {
+        "initial_count": 31,
+        "initial_radius": 30000,
+        "did_refetch": false,
+        "refetch_count": 0,
+        "refetch_radius": 0,
+        "final_count": 7,
+        "refetch_outcome": "no_refetch_needed"
+      }
+    }
+  },
+  {
+    "time": "03:11:00",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: GET https://api.geoapify.com/v2/places?categories=catering.restaurant%2Ccatering.cafe%2Ccatering.bar%2Ccatering.pub&filter=circle%3A-115.11567461558796%2C36.116085747589835%2C12000&limit=30&apiKey=b027461a7b574aadbee660527afb7a02 \"HTTP/2 200 OK\""
+  },
+  {
+    "time": "03:11:00",
+    "level": "INFO",
+    "logger": "tourai.prefetch",
+    "message": "Restaurants: 30 found within 12000m for 'Las Vegas'"
+  },
+  {
+    "time": "03:11:00",
+    "level": "INFO",
+    "logger": "tourai.prefetch",
+    "message": "Prefetch complete for 'Las Vegas, Clark County, Nevada, United States' — 7 attractions, 20 restaurants around hotel, 8 hotels, 5 days of weather",
+    "extra": {
+      "fetch_errors": {},
+      "matrix_points": 35,
+      "hotel_center": [
+        36.116085747589835,
+        -115.11567461558796
+      ]
+    }
+  },
+  {
+    "time": "03:11:00",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "03:11:00",
+    "level": "INFO",
+    "logger": "tourai.scorer",
+    "message": "Scored 7/7 POIs"
+  },
+  {
+    "time": "03:11:00",
+    "level": "INFO",
+    "logger": "tourai.solver",
+    "message": "Skeleton built — 7 POIs across 5 days, hotel: Bo's Place, drive tolerance: 60min",
+    "extra": {
+      "poi_count": 7,
+      "cluster_sizes": [
+        1,
+        1,
+        1,
+        2,
+        2
+      ],
+      "drive_tol_min": 60,
+      "hotel_picked": "Bo's Place"
+    }
+  },
+  {
+    "time": "03:11:02",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "03:11:03",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "03:11:03",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "03:11:05",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "03:11:05",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "03:11:05",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 429 Too Many Requests\""
+  },
+  {
+    "time": "03:11:05",
+    "level": "INFO",
+    "logger": "groq._base_client",
+    "message": "Retrying request to /openai/v1/chat/completions in 10.000000 seconds"
+  },
+  {
+    "time": "03:11:17",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "03:11:17",
+    "level": "INFO",
+    "logger": "tourai.validation",
+    "message": "Swapped duplicate restaurant 'Carson Kitchen' with 'Pizza Rock - Downtown' (reason: appeared too many times in the trip)"
+  },
+  {
+    "time": "03:11:17",
+    "level": "INFO",
+    "logger": "tourai.validation",
+    "message": "Swapped duplicate restaurant 'Broken Yolk Café' with 'Pizza Rock - Downtown' (reason: appeared too many times in the trip)"
+  },
+  {
+    "time": "03:11:17",
+    "level": "INFO",
+    "logger": "tourai.validation",
+    "message": "Swapped duplicate restaurant 'Carson Kitchen' with \"Denny's\" (reason: appeared too many times in the trip)"
+  },
+  {
+    "time": "03:11:17",
+    "level": "INFO",
+    "logger": "tourai.validation",
+    "message": "Swapped duplicate restaurant 'Broken Yolk Café' with \"Denny's\" (reason: appeared too many times in the trip)"
+  },
+  {
+    "time": "03:11:17",
+    "level": "INFO",
+    "logger": "tourai.validation",
+    "message": "Swapped duplicate restaurant 'Carson Kitchen' with 'Weera Thai' (reason: appeared too many times in the trip)"
+  },
+  {
+    "time": "03:11:17",
+    "level": "WARNING",
+    "logger": "tourai.validation",
+    "message": "Plan constraint violations detected — ['2026-05-02 22 LA-SL Sloan AKA Enterprize arrow: drive 74min > tol 60']"
+  },
+  {
+    "time": "03:11:17",
+    "level": "INFO",
+    "logger": "tourai.pipeline",
+    "message": "Pipeline complete for 'Las Vegas, Clark County, Nevada, United States' in 20.65s",
+    "extra": {
+      "req_id": "9bda66a1",
+      "plan_id": "9bda66a161ff4e33a978f38572c2a107"
+    }
+  },
+  {
+    "time": "03:11:17",
+    "level": "INFO",
+    "logger": "tourai.storage",
+    "message": "plan_saved",
+    "extra": {
+      "plan_id": "9bda66a161ff4e33a978f38572c2a107"
+    }
+  }
+]

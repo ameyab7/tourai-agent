@@ -1,0 +1,99 @@
+"""
+api/main.py — App factory + lifespan.
+
+Run:
+  cd backend && uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+
+Module layout:
+  api/config.py          — Settings (Pydantic)
+  api/logging_setup.py   — JSON logging + correlation ID
+  api/cache.py           — Visibility/POI cache (differs from cache_module/)
+  api/metrics.py         — Prometheus metrics
+  api/middleware.py      — Rate limiting + observability
+  api/models.py          — Pydantic request/response models
+  api/pipeline.py        — /v2/itinerary/stream, /v2/itinerary/{id}/replan
+  api/routes/            — REST endpoints
+"""
+
+import asyncio
+import os
+import sys
+
+# Backend folder on sys.path so `cache/`, `solver/`, etc. imports resolve
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from contextlib import asynccontextmanager
+
+from dotenv import load_dotenv
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+
+load_dotenv()
+
+from api.cache import cache_sweep_loop
+from api.config import settings
+from api.logging_setup import setup_logging
+from api.middleware import observability_middleware
+from api import pipeline
+from api.routes import ask, feedback, health, locations, pois, profile, recommendations, route, story
+
+logger = setup_logging(settings.log_file)
+
+# Optional Sentry
+try:
+    import sentry_sdk
+    if settings.sentry_dsn:
+        sentry_sdk.init(
+            dsn=settings.sentry_dsn,
+            traces_sample_rate=0.1,
+            environment="production" if not settings.debug else "development",
+        )
+        logger.info("Sentry error tracking enabled")
+except ImportError:
+    pass
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    from api.migrations import run_migrations
+    from prefetch.orchestrator import close_http_client
+    await asyncio.to_thread(run_migrations, settings.database_url)
+    asyncio.create_task(cache_sweep_loop())
+    yield
+    await close_http_client()
+
+
+app = FastAPI(
+    title="TourAI API",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    lifespan=_lifespan,
+)
+
+app.add_middleware(GZipMiddleware, minimum_size=500)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type", "Authorization", "X-Request-ID"],
+)
+app.middleware("http")(observability_middleware)
+
+app.include_router(pois.router)
+app.include_router(ask.router)
+app.include_router(story.router)
+app.include_router(health.router)
+app.include_router(feedback.router)
+app.include_router(route.router)
+app.include_router(locations.router)
+app.include_router(profile.router)
+app.include_router(recommendations.router)
+app.include_router(pipeline.router)
+
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("api.main:app", host="0.0.0.0", port=port, reload=True)

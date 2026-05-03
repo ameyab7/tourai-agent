@@ -1,0 +1,224 @@
+[
+  {
+    "time": "02:48:46",
+    "level": "INFO",
+    "logger": "tourai.pipeline",
+    "message": "Starting itinerary pipeline for 'Plano Texas'",
+    "extra": {
+      "req_id": "3616ab10",
+      "plan_id": "3616ab1018d9400889a316d2199585e8"
+    }
+  },
+  {
+    "time": "02:48:46",
+    "level": "INFO",
+    "logger": "tourai.api",
+    "message": "POST /v2/itinerary/stream → 200 in 1117ms (from 192.168.1.15)"
+  },
+  {
+    "time": "02:48:47",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: GET https://api.geoapify.com/v1/geocode/search?text=Plano+Texas&apiKey=b027461a7b574aadbee660527afb7a02&limit=5&format=json \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "02:48:47",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: GET https://api.geoapify.com/v2/places?categories=accommodation.hotel%2Caccommodation.guest_house%2Caccommodation.hostel%2Caccommodation.motel&filter=circle%3A-96.6925096%2C33.0136764%2C6000&limit=10&apiKey=b027461a7b574aadbee660527afb7a02 \"HTTP/2 200 OK\""
+  },
+  {
+    "time": "02:48:47",
+    "level": "INFO",
+    "logger": "tourai.prefetch",
+    "message": "Hotels: 10 found within 6000m for 'Plano'"
+  },
+  {
+    "time": "02:48:47",
+    "level": "INFO",
+    "logger": "tourai.prefetch",
+    "message": "Picked hotel: Hampton Inn & Suites at (33.001689618676586, -96.67454875169138)"
+  },
+  {
+    "time": "02:48:48",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: GET https://api.open-meteo.com/v1/forecast?latitude=33.0136764&longitude=-96.6925096&daily=temperature_2m_max%2Ctemperature_2m_min%2Cweather_code%2Csunrise%2Csunset&timezone=auto&forecast_days=16 \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "02:48:49",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: GET https://api.geoapify.com/v2/places?categories=tourism.sights%2Ctourism.sights.castle%2Ctourism.sights.ruines%2Ctourism.sights.fort%2Ctourism.sights.memorial%2Ctourism.sights.tower%2Ctourism.attraction%2Ctourism.attraction.viewpoint%2Centertainment.museum%2Centertainment.culture.gallery%2Centertainment.culture.theatre%2Centertainment.culture.arts_centre%2Centertainment.cinema%2Centertainment.theme_park%2Centertainment.aquarium%2Centertainment.zoo%2Cleisure.park%2Cleisure.park.nature_reserve%2Cnational_park%2Cnatural.mountain.peak%2Cbeach%2Ccatering.restaurant%2Ccatering.cafe%2Ccatering.bar%2Ccatering.pub%2Csport.stadium%2Cproduction.winery%2Cproduction.brewery&filter=circle%3A-96.6925096%2C33.0136764%2C20000&limit=100&apiKey=b027461a7b574aadbee660527afb7a02 \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "02:48:49",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: GET https://api.geoapify.com/v2/places?categories=catering.restaurant%2Ccatering.cafe%2Ccatering.bar%2Ccatering.pub&filter=circle%3A-96.67454875169138%2C33.001689618676586%2C8000&limit=30&apiKey=b027461a7b574aadbee660527afb7a02 \"HTTP/2 200 OK\""
+  },
+  {
+    "time": "02:48:49",
+    "level": "INFO",
+    "logger": "utils.geoapify_places",
+    "message": "Fetched 36 POIs from Geoapify at (33.0136764, -96.6925096)"
+  },
+  {
+    "time": "02:48:49",
+    "level": "INFO",
+    "logger": "tourai.prefetch",
+    "message": "POI diagnostic: 'Plano' outcome=no_refetch_needed final=9",
+    "extra": {
+      "diagnostic": {
+        "initial_count": 36,
+        "initial_radius": 20000,
+        "did_refetch": false,
+        "refetch_count": 0,
+        "refetch_radius": 0,
+        "final_count": 9,
+        "refetch_outcome": "no_refetch_needed"
+      }
+    }
+  },
+  {
+    "time": "02:48:49",
+    "level": "INFO",
+    "logger": "tourai.prefetch",
+    "message": "Restaurants: 30 found within 8000m for 'Plano'"
+  },
+  {
+    "time": "02:48:49",
+    "level": "INFO",
+    "logger": "tourai.prefetch",
+    "message": "Prefetch complete for 'Plano Texas' — 9 attractions, 20 restaurants around hotel, 8 hotels, 5 days of weather",
+    "extra": {
+      "fetch_errors": {},
+      "matrix_points": 37,
+      "hotel_center": [
+        33.001689618676586,
+        -96.67454875169138
+      ]
+    }
+  },
+  {
+    "time": "02:48:50",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "02:48:50",
+    "level": "INFO",
+    "logger": "tourai.scorer",
+    "message": "Scored 9/9 POIs"
+  },
+  {
+    "time": "02:48:50",
+    "level": "INFO",
+    "logger": "tourai.solver",
+    "message": "Skeleton built — 9 POIs across 5 days, hotel: Hampton Inn & Suites, drive tolerance: 120min",
+    "extra": {
+      "poi_count": 9,
+      "cluster_sizes": [
+        4,
+        1,
+        1,
+        2,
+        1
+      ],
+      "drive_tol_min": 120,
+      "hotel_picked": "Hampton Inn & Suites"
+    }
+  },
+  {
+    "time": "02:48:51",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "02:48:51",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "02:48:51",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "02:48:51",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "02:48:51",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "02:48:51",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "02:48:51",
+    "level": "INFO",
+    "logger": "tourai.validation",
+    "message": "Swapped duplicate restaurant 'Love & War in Texas' with 'Olive Garden' (reason: appeared too many times in the trip)"
+  },
+  {
+    "time": "02:48:51",
+    "level": "INFO",
+    "logger": "tourai.validation",
+    "message": "Swapped duplicate restaurant 'Cafe Brazil' with 'Olive Garden' (reason: appeared too many times in the trip)"
+  },
+  {
+    "time": "02:48:51",
+    "level": "INFO",
+    "logger": "tourai.validation",
+    "message": "Swapped duplicate restaurant 'Love & War in Texas' with 'Fox & Hound' (reason: appeared too many times in the trip)"
+  },
+  {
+    "time": "02:48:51",
+    "level": "INFO",
+    "logger": "tourai.validation",
+    "message": "Swapped duplicate restaurant \"Dimassi's Mediterranean Buffet\" with 'La La Land' (reason: appeared too many times in the trip)"
+  },
+  {
+    "time": "02:48:51",
+    "level": "INFO",
+    "logger": "tourai.validation",
+    "message": "Swapped duplicate restaurant 'Cafe Brazil' with 'Fox & Hound' (reason: appeared too many times in the trip)"
+  },
+  {
+    "time": "02:48:51",
+    "level": "INFO",
+    "logger": "tourai.validation",
+    "message": "Swapped duplicate restaurant 'Love & War in Texas' with 'La La Land' (reason: appeared too many times in the trip)"
+  },
+  {
+    "time": "02:48:51",
+    "level": "INFO",
+    "logger": "tourai.pipeline",
+    "message": "Pipeline complete for 'Plano Texas' in 5.21s",
+    "extra": {
+      "req_id": "3616ab10",
+      "plan_id": "3616ab1018d9400889a316d2199585e8"
+    }
+  },
+  {
+    "time": "02:48:51",
+    "level": "INFO",
+    "logger": "tourai.storage",
+    "message": "plan_saved",
+    "extra": {
+      "plan_id": "3616ab1018d9400889a316d2199585e8"
+    }
+  }
+]

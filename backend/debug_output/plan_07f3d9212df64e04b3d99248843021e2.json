@@ -1,0 +1,594 @@
+{
+  "title": "Five Days of Texan Culture and Community in Plano",
+  "summary": "A journey through the heart of Plano, exploring its rich cultural heritage, historic landmarks, and vibrant community spirit, leaving a lasting impression of the city's unique blend of tradition and innovation.",
+  "destination": "Dallas, Dallas County, Texas, United States",
+  "start_date": "2026-05-02",
+  "end_date": "2026-05-06",
+  "highlights": [
+    {
+      "name": "Plano Children's Theater",
+      "why_cant_skip": "Witnessing the magic of live theater through the eyes of children, as they bring stories to life on stage, is an experience that will leave you enchanted and inspired.",
+      "emoji": "🎭"
+    },
+    {
+      "name": "North Texas Masonic Historical Museum & Library",
+      "why_cant_skip": "Delving into the fascinating history of Freemasonry in Texas, surrounded by rare artifacts and texts, offers a unique glimpse into a lesser-known aspect of the state's heritage.",
+      "emoji": "📚"
+    },
+    {
+      "name": "Robinson Fine Arts Center",
+      "why_cant_skip": "The stunning architecture and beautiful grounds of the Robinson Fine Arts Center provide a serene backdrop for exploring local art and performance, making it a must-visit for anyone interested in the arts.",
+      "emoji": "🎨"
+    }
+  ],
+  "accommodation": {
+    "name": "Residence Inn",
+    "stars": "",
+    "reason": "The Residence Inn provides a comfortable and convenient base for exploring Plano, with its spacious suites and amenities catering to the needs of groups, making it an ideal choice for this trip.",
+    "booking_url": "https://www.booking.com/search.html?ss=Dallas%2C+Dallas+County%2C+Texas%2C+United+States&checkin=2026-05-02&checkout=2026-05-06"
+  },
+  "budget": {
+    "accommodation_usd": 800,
+    "food_usd": 500,
+    "activities_usd": 200,
+    "transport_usd": 150,
+    "total_usd": 1650,
+    "notes": "Be prepared for variable weather in Texas; pack accordingly and consider the cost of any additional activities or tips for local guides."
+  },
+  "days": [
+    {
+      "date": "2026-05-02",
+      "day_label": "Day 1 — Plano Culture and History",
+      "rain_plan": "If it rains: consider visiting the Plano Children's Theater's indoor facilities or rescheduling the outdoor visit to The Ammie Wilson House for another day",
+      "weather": {
+        "description": "Mainly clear",
+        "temp_high_c": 24.7,
+        "temp_low_c": 10.7,
+        "is_clear": true
+      },
+      "stops": [
+        {
+          "poi_id": "hotel-checkin",
+          "name": "Residence Inn",
+          "poi_type": "accommodation",
+          "arrival_time": "14:00",
+          "duration_min": 30,
+          "is_meal": false,
+          "lat": 32.76591738114604,
+          "lon": -96.8761496444611,
+          "tip": "Ask for a room with a view of the city — it's worth the extra effort to get a glimpse of the Plano skyline",
+          "best_time": "Right at check-in to get settled before heading out",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "arrive",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "a2",
+          "name": "Plano Children's Theater",
+          "poi_type": "culture",
+          "arrival_time": "15:00",
+          "duration_min": 60,
+          "is_meal": false,
+          "lat": 33.01688744619408,
+          "lon": -96.73535581403743,
+          "tip": "Check the theater's schedule for any special performances or events that might be happening during your visit",
+          "best_time": "Right at opening — catch a show or take a tour before the afternoon crowds",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "drive",
+            "duration_min": 102
+          }
+        },
+        {
+          "poi_id": "a9",
+          "name": "The Ammie Wilson House",
+          "poi_type": "attraction",
+          "arrival_time": "16:30",
+          "duration_min": 60,
+          "is_meal": false,
+          "lat": 33.01912,
+          "lon": -96.73132,
+          "tip": "Take a moment to read the historical plaque and learn about the significance of The Ammie Wilson House",
+          "best_time": "Late afternoon — the golden hour lighting makes for great photos",
+          "crowd_level": "low",
+          "skip_if_rushed": true,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 1
+          }
+        },
+        {
+          "poi_id": "meal-dinner-2026-05-02",
+          "name": "Pecan Lodge",
+          "poi_type": "meal",
+          "arrival_time": "19:00",
+          "duration_min": 90,
+          "is_meal": true,
+          "lat": 32.78367179958929,
+          "lon": -96.78384461952488,
+          "tip": "Order the slow-smoked brisket — it's a Texas staple and Pecan Lodge does it perfectly",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-05-03",
+      "day_label": "Day 2 — Parks and Stadiums",
+      "rain_plan": "If it rains: consider visiting the JPII Athletic Complex's indoor facilities or rescheduling the park visit for another day",
+      "weather": {
+        "description": "Overcast",
+        "temp_high_c": 29.3,
+        "temp_low_c": 12.6,
+        "is_clear": false
+      },
+      "stops": [
+        {
+          "poi_id": "meal-breakfast-2026-05-03",
+          "name": "Mama's Daughters",
+          "poi_type": "meal",
+          "arrival_time": "08:30",
+          "duration_min": 45,
+          "is_meal": true,
+          "lat": 32.79530409958916,
+          "lon": -96.82811995647648,
+          "tip": "Try the chicken and waffles — it's a local favorite and pairs well with their sweet tea.",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "arrive",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "a7",
+          "name": "Frankford Park",
+          "poi_type": "park",
+          "arrival_time": "10:00",
+          "duration_min": 60,
+          "is_meal": false,
+          "lat": 33.0004932595963,
+          "lon": -96.7848445542065,
+          "tip": "Walk the trail clockwise to avoid the morning sun in your eyes, and notice the different types of trees and bird species.",
+          "best_time": "Early morning, just after opening, to beat the heat and crowds",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "meal-lunch-2026-05-03",
+          "name": "Campuzano Mexican Food",
+          "poi_type": "meal",
+          "arrival_time": "12:30",
+          "duration_min": 60,
+          "is_meal": true,
+          "lat": 32.80572064958905,
+          "lon": -96.8120310903189,
+          "tip": "Order the carne asada tacos and ask for extra salsa — they make it fresh in-house.",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "a8",
+          "name": "JPII Athletic Complex",
+          "poi_type": "stadium",
+          "arrival_time": "14:00",
+          "duration_min": 60,
+          "is_meal": false,
+          "lat": 33.01126497820985,
+          "lon": -96.76558647541543,
+          "tip": "Check the schedule for any events or games happening during your visit, and consider taking a guided tour of the facilities.",
+          "best_time": "Afternoon, when the sun is not directly overhead, for better photo opportunities",
+          "crowd_level": "high",
+          "skip_if_rushed": true,
+          "transit_from_prev": {
+            "mode": "uber",
+            "duration_min": 22
+          }
+        },
+        {
+          "poi_id": "meal-dinner-2026-05-03",
+          "name": "Pecan Lodge",
+          "poi_type": "meal",
+          "arrival_time": "19:00",
+          "duration_min": 90,
+          "is_meal": true,
+          "lat": 32.78367179958929,
+          "lon": -96.78384461952488,
+          "tip": "Try the slow-smoked brisket and ask for a sample of their daily specials — they often have unique meats and sides.",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-05-04",
+      "day_label": "Day 3 — Culture and Sports",
+      "rain_plan": "If it rains: consider visiting the North Texas Masonic Historical Museum & Library earlier in the day, as it's indoors",
+      "weather": {
+        "description": "Overcast",
+        "temp_high_c": 28.1,
+        "temp_low_c": 16.9,
+        "is_clear": false
+      },
+      "stops": [
+        {
+          "poi_id": "meal-breakfast-2026-05-04",
+          "name": "Mama's Daughters",
+          "poi_type": "meal",
+          "arrival_time": "08:30",
+          "duration_min": 45,
+          "is_meal": true,
+          "lat": 32.79530409958916,
+          "lon": -96.82811995647648,
+          "tip": "Order the chicken and waffles — it's a local favorite and a great way to start the day.",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "arrive",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "a12",
+          "name": "Williams Field",
+          "poi_type": "stadium",
+          "arrival_time": "10:00",
+          "duration_min": 60,
+          "is_meal": false,
+          "lat": 33.02322094258779,
+          "lon": -96.68679001825753,
+          "tip": "Check out the stadium's unique architecture and notice the different sports facilities available.",
+          "best_time": "Right at opening — the morning light makes for great photos",
+          "crowd_level": "low",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "meal-lunch-2026-05-04",
+          "name": "Campuzano Mexican Food",
+          "poi_type": "meal",
+          "arrival_time": "12:30",
+          "duration_min": 60,
+          "is_meal": true,
+          "lat": 32.80572064958905,
+          "lon": -96.8120310903189,
+          "tip": "Try the carne asada tacos — they're made with fresh, locally-sourced ingredients.",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "a0",
+          "name": "North Texas Masonic Historical Museum & Library",
+          "poi_type": "museum",
+          "arrival_time": "14:00",
+          "duration_min": 60,
+          "is_meal": false,
+          "lat": 33.01927132801684,
+          "lon": -96.70031236121181,
+          "tip": "Explore the museum's library and archives — they contain a wealth of information on local history.",
+          "best_time": "Afternoon, when the morning crowds have dissipated",
+          "crowd_level": "medium",
+          "skip_if_rushed": true,
+          "transit_from_prev": {
+            "mode": "uber",
+            "duration_min": 19
+          }
+        },
+        {
+          "poi_id": "meal-dinner-2026-05-04",
+          "name": "Texas de Brazil",
+          "poi_type": "meal",
+          "arrival_time": "19:00",
+          "duration_min": 90,
+          "is_meal": true,
+          "lat": 32.78367179958929,
+          "lon": -96.78384461952488,
+          "tip": "Order the slow-smoked brisket — it's a Texas staple and Pecan Lodge does it perfectly.",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-05-05",
+      "day_label": "Day 4 — Parks and Plano",
+      "rain_plan": "If it rains: consider spending more time at Cinemark Central Plano or adjusting the park visits to shorter intervals",
+      "weather": {
+        "description": "Heavy drizzle",
+        "temp_high_c": 29.2,
+        "temp_low_c": 19.8,
+        "is_clear": false
+      },
+      "stops": [
+        {
+          "poi_id": "meal-breakfast-2026-05-05",
+          "name": "Texas de Brazil",
+          "poi_type": "meal",
+          "arrival_time": "08:30",
+          "duration_min": 45,
+          "is_meal": true,
+          "lat": 32.79530409958916,
+          "lon": -96.82811995647648,
+          "tip": "Try their American-style breakfast with a twist, like chicken and waffles.",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "arrive",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "a5",
+          "name": "Cheyenne Park",
+          "poi_type": "park",
+          "arrival_time": "10:00",
+          "duration_min": 60,
+          "is_meal": false,
+          "lat": 33.033536192792,
+          "lon": -96.76371996876273,
+          "tip": "Take a walk around the lake and notice the bird species that inhabit the area.",
+          "best_time": "Early morning for birdwatching and less crowded",
+          "crowd_level": "low",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "meal-lunch-2026-05-05",
+          "name": "Chip's Old Fashioned Hamburger",
+          "poi_type": "meal",
+          "arrival_time": "12:30",
+          "duration_min": 60,
+          "is_meal": true,
+          "lat": 32.80572064958905,
+          "lon": -96.8120310903189,
+          "tip": "Order the carne asada tacos and ask for extra salsa.",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "a1",
+          "name": "Cinemark Central Plano",
+          "poi_type": "cinema",
+          "arrival_time": "12:40",
+          "duration_min": 60,
+          "is_meal": false,
+          "lat": 33.025189998206244,
+          "lon": -96.76850859739103,
+          "tip": "Catch a matinee showing to avoid the evening crowds, and consider seats in the back for a better viewing experience.",
+          "best_time": "Right at opening — crowds arrive by 12 PM",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 13
+          }
+        },
+        {
+          "poi_id": "a6",
+          "name": "Caddo Park",
+          "poi_type": "park",
+          "arrival_time": "15:20",
+          "duration_min": 60,
+          "is_meal": false,
+          "lat": 33.03553650860907,
+          "lon": -96.74543594713057,
+          "tip": "Explore the playground area and check out the public art installations throughout the park.",
+          "best_time": "Late afternoon for a relaxed atmosphere",
+          "crowd_level": "low",
+          "skip_if_rushed": true,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 6
+          }
+        },
+        {
+          "poi_id": "meal-dinner-2026-05-05",
+          "name": "Mason's Chicken and Seafood",
+          "poi_type": "meal",
+          "arrival_time": "19:00",
+          "duration_min": 90,
+          "is_meal": true,
+          "lat": 32.78367179958929,
+          "lon": -96.78384461952488,
+          "tip": "Try the slow-smoked brisket and ask for a side of their spicy BBQ sauce.",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-05-06",
+      "day_label": "Day 5 — Culture and History in Plano",
+      "rain_plan": "If it rains: consider visiting the Robinson Fine Arts Center or the Courtyard Theater earlier, as they are indoor activities",
+      "weather": {
+        "description": "Rain showers",
+        "temp_high_c": 32.3,
+        "temp_low_c": 14.4,
+        "is_clear": false
+      },
+      "stops": [
+        {
+          "poi_id": "meal-breakfast-2026-05-06",
+          "name": "Chip's Old Fashioned Hamburger",
+          "poi_type": "meal",
+          "arrival_time": "08:30",
+          "duration_min": 45,
+          "is_meal": true,
+          "lat": 32.79530409958916,
+          "lon": -96.82811995647648,
+          "tip": "Try the chicken and waffles — it's a local favorite and a great way to start the day",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "arrive",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "a11",
+          "name": "Robinson Fine Arts Center",
+          "poi_type": "culture",
+          "arrival_time": "10:00",
+          "duration_min": 60,
+          "is_meal": false,
+          "lat": 33.02460929944959,
+          "lon": -96.71474816665328,
+          "tip": "Check out the local art exhibits on the upper floor — they often feature works by emerging artists",
+          "best_time": "Right at opening — the natural light is best for viewing the art",
+          "crowd_level": "low",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "a4",
+          "name": "Courtyard Theater",
+          "poi_type": "culture",
+          "arrival_time": "10:15",
+          "duration_min": 60,
+          "is_meal": false,
+          "lat": 33.02073499896066,
+          "lon": -96.70345262069188,
+          "tip": "Take a stroll around the courtyard before or after the show — it's a hidden gem in the city",
+          "best_time": "Just after opening — the courtyard is usually empty and peaceful",
+          "crowd_level": "low",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 10
+          }
+        },
+        {
+          "poi_id": "a3",
+          "name": "City of Plano Time Capsule",
+          "poi_type": "attraction",
+          "arrival_time": "10:30",
+          "duration_min": 60,
+          "is_meal": false,
+          "lat": 33.0200761,
+          "lon": -96.7018677,
+          "tip": "Read the inscriptions on the time capsule — they offer a unique glimpse into the city's history",
+          "best_time": "When the sun is not directly overhead — the inscriptions can be hard to read in direct sunlight",
+          "crowd_level": "low",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 3
+          }
+        },
+        {
+          "poi_id": "a10",
+          "name": "Plano Cemetery",
+          "poi_type": "attraction",
+          "arrival_time": "10:45",
+          "duration_min": 60,
+          "is_meal": false,
+          "lat": 33.01521,
+          "lon": -96.70347,
+          "tip": "Look for the historic headstones and take a moment to reflect on the city's past",
+          "best_time": "Late morning — the sunlight filters through the trees and creates a peaceful atmosphere",
+          "crowd_level": "low",
+          "skip_if_rushed": true,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 5
+          }
+        },
+        {
+          "poi_id": "hotel-checkout",
+          "name": "Residence Inn",
+          "poi_type": "accommodation",
+          "arrival_time": "11:00",
+          "duration_min": 30,
+          "is_meal": false,
+          "lat": 32.76591738114604,
+          "lon": -96.8761496444611,
+          "tip": "Double-check that you have all your belongings before leaving the hotel",
+          "best_time": "As scheduled — don't rush and make sure you have everything",
+          "crowd_level": "low",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "drive",
+            "duration_min": 101
+          }
+        },
+        {
+          "poi_id": "meal-lunch-2026-05-06",
+          "name": "Mason's Chicken and Seafood",
+          "poi_type": "meal",
+          "arrival_time": "12:30",
+          "duration_min": 60,
+          "is_meal": true,
+          "lat": 32.78367179958929,
+          "lon": -96.78384461952488,
+          "tip": "Order the slow-smoked brisket — it's a Texas classic and a must-try",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        }
+      ]
+    }
+  ],
+  "getting_there": {
+    "flights_url": "https://www.google.com/travel/flights?q=Flights+to+Dallas%2C+Dallas+County%2C+Texas%2C+United+States"
+  }
+}

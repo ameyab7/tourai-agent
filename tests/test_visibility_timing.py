@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 load_dotenv()
 
-from utils.geoapify import search_nearby
+from utils.geoapify_buildings import search_nearby
 from utils.osrm import get_current_street
 from utils import visibility
 

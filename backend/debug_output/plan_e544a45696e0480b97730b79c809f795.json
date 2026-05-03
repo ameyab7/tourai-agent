@@ -1,0 +1,463 @@
+{
+  "title": "Your trip to Las Vegas, Clark County, Nevada, United States",
+  "summary": "",
+  "destination": "Las Vegas, Clark County, Nevada, United States",
+  "start_date": "2026-05-02",
+  "end_date": "2026-05-06",
+  "highlights": [],
+  "accommodation": {
+    "name": "Bo's Place",
+    "stars": "",
+    "reason": "",
+    "booking_url": "https://www.booking.com/search.html?ss=Las+Vegas%2C+Clark+County%2C+Nevada%2C+United+States&checkin=2026-05-02&checkout=2026-05-06"
+  },
+  "budget": {},
+  "days": [
+    {
+      "date": "2026-05-02",
+      "day_label": "Day 1",
+      "rain_plan": "",
+      "weather": {
+        "description": "Overcast",
+        "temp_high_c": 30.7,
+        "temp_low_c": 15.2,
+        "is_clear": false
+      },
+      "stops": [
+        {
+          "poi_id": "hotel-checkin",
+          "name": "Bo's Place",
+          "poi_type": "accommodation",
+          "arrival_time": "14:00",
+          "duration_min": 30,
+          "is_meal": false,
+          "lat": 36.116085747589835,
+          "lon": -115.11567461558796,
+          "tip": "",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "arrive",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "a3",
+          "name": "22 LA-SL Sloan AKA Enterprize arrow",
+          "poi_type": "attraction",
+          "arrival_time": "15:00",
+          "duration_min": 75,
+          "is_meal": false,
+          "lat": 35.9532366,
+          "lon": -115.17934429999998,
+          "tip": "",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": true,
+          "transit_from_prev": {
+            "mode": "drive",
+            "duration_min": 74
+          }
+        },
+        {
+          "poi_id": "meal-dinner-2026-05-02",
+          "name": "(Dinner)",
+          "poi_type": "meal",
+          "arrival_time": "19:00",
+          "duration_min": 90,
+          "is_meal": true,
+          "lat": 0.0,
+          "lon": 0.0,
+          "tip": "",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-05-03",
+      "day_label": "Day 2",
+      "rain_plan": "",
+      "weather": {
+        "description": "Overcast",
+        "temp_high_c": 33.1,
+        "temp_low_c": 17.7,
+        "is_clear": false
+      },
+      "stops": [
+        {
+          "poi_id": "meal-breakfast-2026-05-03",
+          "name": "(Breakfast)",
+          "poi_type": "meal",
+          "arrival_time": "08:30",
+          "duration_min": 45,
+          "is_meal": true,
+          "lat": 0.0,
+          "lon": 0.0,
+          "tip": "",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "arrive",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "a6",
+          "name": "Areola Peak",
+          "poi_type": "peak",
+          "arrival_time": "10:00",
+          "duration_min": 75,
+          "is_meal": false,
+          "lat": 35.9689612,
+          "lon": -115.0052753,
+          "tip": "",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": true,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "meal-lunch-2026-05-03",
+          "name": "(Lunch)",
+          "poi_type": "meal",
+          "arrival_time": "12:30",
+          "duration_min": 60,
+          "is_meal": true,
+          "lat": 0.0,
+          "lon": 0.0,
+          "tip": "",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "meal-dinner-2026-05-03",
+          "name": "(Dinner)",
+          "poi_type": "meal",
+          "arrival_time": "19:00",
+          "duration_min": 90,
+          "is_meal": true,
+          "lat": 0.0,
+          "lon": 0.0,
+          "tip": "",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-05-04",
+      "day_label": "Day 3",
+      "rain_plan": "",
+      "weather": {
+        "description": "Overcast",
+        "temp_high_c": 23.4,
+        "temp_low_c": 17.9,
+        "is_clear": false
+      },
+      "stops": [
+        {
+          "poi_id": "meal-breakfast-2026-05-04",
+          "name": "(Breakfast)",
+          "poi_type": "meal",
+          "arrival_time": "08:30",
+          "duration_min": 45,
+          "is_meal": true,
+          "lat": 0.0,
+          "lon": 0.0,
+          "tip": "",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "arrive",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "a0",
+          "name": "Sloan Canyon National Conservation Area",
+          "poi_type": "park",
+          "arrival_time": "10:00",
+          "duration_min": 75,
+          "is_meal": false,
+          "lat": 35.91049382201719,
+          "lon": -115.0483629895287,
+          "tip": "",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": true,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "meal-lunch-2026-05-04",
+          "name": "(Lunch)",
+          "poi_type": "meal",
+          "arrival_time": "12:30",
+          "duration_min": 60,
+          "is_meal": true,
+          "lat": 0.0,
+          "lon": 0.0,
+          "tip": "",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "meal-dinner-2026-05-04",
+          "name": "(Dinner)",
+          "poi_type": "meal",
+          "arrival_time": "19:00",
+          "duration_min": 90,
+          "is_meal": true,
+          "lat": 0.0,
+          "lon": 0.0,
+          "tip": "",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-05-05",
+      "day_label": "Day 4",
+      "rain_plan": "",
+      "weather": {
+        "description": "Overcast",
+        "temp_high_c": 22.9,
+        "temp_low_c": 14.0,
+        "is_clear": false
+      },
+      "stops": [
+        {
+          "poi_id": "meal-breakfast-2026-05-05",
+          "name": "(Breakfast)",
+          "poi_type": "meal",
+          "arrival_time": "08:30",
+          "duration_min": 45,
+          "is_meal": true,
+          "lat": 0.0,
+          "lon": 0.0,
+          "tip": "",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "arrive",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "a1",
+          "name": "Allegro Park",
+          "poi_type": "park",
+          "arrival_time": "10:00",
+          "duration_min": 75,
+          "is_meal": false,
+          "lat": 35.98940160873255,
+          "lon": -115.12247808910634,
+          "tip": "",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "meal-lunch-2026-05-05",
+          "name": "(Lunch)",
+          "poi_type": "meal",
+          "arrival_time": "12:30",
+          "duration_min": 60,
+          "is_meal": true,
+          "lat": 0.0,
+          "lon": 0.0,
+          "tip": "",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "a2",
+          "name": "Sonata Park",
+          "poi_type": "park",
+          "arrival_time": "14:00",
+          "duration_min": 75,
+          "is_meal": false,
+          "lat": 35.97573372282921,
+          "lon": -115.12114159814206,
+          "tip": "",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": true,
+          "transit_from_prev": {
+            "mode": "uber",
+            "duration_min": 18
+          }
+        },
+        {
+          "poi_id": "meal-dinner-2026-05-05",
+          "name": "(Dinner)",
+          "poi_type": "meal",
+          "arrival_time": "19:00",
+          "duration_min": 90,
+          "is_meal": true,
+          "lat": 0.0,
+          "lon": 0.0,
+          "tip": "",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        }
+      ]
+    },
+    {
+      "date": "2026-05-06",
+      "day_label": "Day 5",
+      "rain_plan": "",
+      "weather": {
+        "description": "Clear sky",
+        "temp_high_c": 30.2,
+        "temp_low_c": 18.3,
+        "is_clear": true
+      },
+      "stops": [
+        {
+          "poi_id": "meal-breakfast-2026-05-06",
+          "name": "(Breakfast)",
+          "poi_type": "meal",
+          "arrival_time": "08:30",
+          "duration_min": 45,
+          "is_meal": true,
+          "lat": 0.0,
+          "lon": 0.0,
+          "tip": "",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "arrive",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "a5",
+          "name": "Peak 3920+",
+          "poi_type": "peak",
+          "arrival_time": "10:00",
+          "duration_min": 75,
+          "is_meal": false,
+          "lat": 35.9600599,
+          "lon": -115.0321945,
+          "tip": "",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        },
+        {
+          "poi_id": "a4",
+          "name": "Peak 3382",
+          "poi_type": "peak",
+          "arrival_time": "10:30",
+          "duration_min": 75,
+          "is_meal": false,
+          "lat": 35.9746134,
+          "lon": -115.0247321,
+          "tip": "",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": true,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 5
+          }
+        },
+        {
+          "poi_id": "hotel-checkout",
+          "name": "Bo's Place",
+          "poi_type": "accommodation",
+          "arrival_time": "11:00",
+          "duration_min": 30,
+          "is_meal": false,
+          "lat": 36.116085747589835,
+          "lon": -115.11567461558796,
+          "tip": "",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "drive",
+            "duration_min": 55
+          }
+        },
+        {
+          "poi_id": "meal-lunch-2026-05-06",
+          "name": "(Lunch)",
+          "poi_type": "meal",
+          "arrival_time": "12:30",
+          "duration_min": 60,
+          "is_meal": true,
+          "lat": 0.0,
+          "lon": 0.0,
+          "tip": "",
+          "best_time": "",
+          "crowd_level": "medium",
+          "skip_if_rushed": false,
+          "transit_from_prev": {
+            "mode": "walk",
+            "duration_min": 0
+          }
+        }
+      ]
+    }
+  ],
+  "getting_there": {
+    "flights_url": "https://www.google.com/travel/flights?q=Flights+to+Las+Vegas%2C+Clark+County%2C+Nevada%2C+United+States"
+  }
+}

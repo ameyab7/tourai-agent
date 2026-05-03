@@ -27,9 +27,9 @@ TourAI App
 
 The app is a single screen today. Nothing else can be built until navigation exists.
 
-- [x] Add `expo-router` to `mobile/`
+- [x] Add `expo-router` to `frontend/`
 - [x] Create tab layout: Home, Live Walk, Plan, Profile
-- [x] Move current `App.js` map screen → `mobile/app/(tabs)/live-walk.js`
+- [x] Move current `App.js` map screen → `frontend/app/(tabs)/live-walk.js`
 - [x] Add placeholder screens for each tab so the shell compiles
 - [x] Add a top-level `_layout.js` with GestureHandlerRootView + SafeAreaProvider
 - [x] Verify Live Walk still works identically after the move
@@ -42,14 +42,14 @@ The app is a single screen today. Nothing else can be built until navigation exi
 
 Shown once on first launch. Captures explicit interests, travel style, pace, and drive tolerance, then POSTs to the backend profile API.
 
-**Mobile (`mobile/app/onboarding/`):**
+**Mobile (`frontend/app/onboarding/`):**
 - [x] Interest selection screen — 10 category cards in 2-col grid, multi-select (`onboarding/index.js`)
 - [x] Travel style screen — Solo / Couple / Family / Group (`onboarding/style.js`)
 - [x] Pace preference screen — Relaxed / Balanced / Packed (`onboarding/pace.js`)
 - [x] Drive tolerance screen — 4 anchored options: "Stick close to home" / "Up to 2 hours" / "Half-day road trip" / "I'll drive anywhere" (`onboarding/drive.js`)
 - [x] Completion screen — profile summary card + "Start Exploring" CTA (`onboarding/done.js`)
 
-**Backend (`api/routes/profile.py`):**
+**Backend (`backend/api/routes/profile.py`):**
 - [x] `POST /v1/profile/setup` — accepts onboarding payload, upserts to `_profiles` dict + `profiles.json`
 - [x] `GET /v1/profile/{device_id}` — returns profile or 404
 - N/A: "Extend `profile_manager.py`" — that file belonged to the old LangGraph architecture; the FastAPI profile route serves the same purpose directly
@@ -94,7 +94,7 @@ The main free-tier entry point. Replaces the current "drop straight into map" UX
 - [ ] Each card: photo (Google Places), name, why-it-matches-you blurb, distance/drive time, conditions badge (golden hour in 2h, clear skies, low crowds)
 - [ ] "Plan a trip here" CTA → Trip Planner; "Walk here now" CTA → Live Walk (premium gate)
 
-**Backend (`api/routes/recommendations.py`):**
+**Backend (`backend/api/routes/recommendations.py`):**
 - [ ] `POST /v1/recommendations` — accepts `{ lat, lon, mood, radius_km, limit }`
 - [ ] Pulls nearby POIs, scores by interest match + mood + current conditions (weather, time of day)
 - [ ] Returns ranked cards with a `reason` field ("matches your interest in car photography + golden hour in 90 min")
@@ -113,9 +113,9 @@ The main free-tier entry point. Replaces the current "drop straight into map" UX
 > ⚠️ **Pre-production checklist — do this before App Store submission:**
 > 1. Create RevenueCat account at revenuecat.com, add iOS app (`com.tourai.app`)
 > 2. Define products in App Store Connect: `tourai_monthly` ($7.99) and `tourai_annual` ($59.99)
-> 3. In `mobile/lib/purchases.js`: set `MOCK_MODE = false` and replace `REVENUECAT_API_KEY`
+> 3. In `frontend/lib/purchases.js`: set `MOCK_MODE = false` and replace `REVENUECAT_API_KEY`
 > 4. Run `npm install react-native-purchases` + `npx expo prebuild` to link native module
-> 5. In `mobile/lib/purchases.js`: revert `active = true` back to `active = val === 'true'`
+> 5. In `frontend/lib/purchases.js`: revert `active = true` back to `active = val === 'true'`
 > 6. Add Apple Sign In (required by App Store if offering other social login — see Known Issues #2)
 > 7. Test full purchase flow on a physical device (simulator cannot process payments)
 
@@ -134,7 +134,7 @@ The main free-tier entry point. Replaces the current "drop straight into map" UX
 
 The largest new surface in the PRD. A separate planning mode for multi-day trips.
 
-**Mobile (`mobile/app/(tabs)/plan.js`):**
+**Mobile (`frontend/app/(tabs)/plan.js`):**
 - [x] Destination text input
 - [x] Date range stepper (start + end, no native module needed)
 - [x] Nights / days count label
@@ -143,7 +143,7 @@ The largest new surface in the PRD. A separate planning mode for multi-day trips
 - [x] Generated itinerary view: collapsible day cards with timeline stops
 - [ ] Each stop: photo header (Phase 7), booking link, save / export itinerary
 
-**Backend (`api/routes/itinerary.py`):**
+**Backend (`backend/api/routes/itinerary.py`):**
 - [x] `POST /v1/itinerary` — accepts `{ destination, start_date, end_date, interests, travel_style, pace, drive_tolerance_hrs }`
 - [x] Pull user profile for interests, pace, drive tolerance (via optional JWT)
 - [x] Fetch POIs from Overpass for destination area (5 km radius, 3 mirrors)
@@ -152,7 +152,7 @@ The largest new surface in the PRD. A separate planning mode for multi-day trips
 - [x] Returns structured JSON: `{ title, summary, days: [{ date, day_label, stops }] }`
 
 **Google Places / Geocoding:**
-- [x] Add `GOOGLE_PLACES_API_KEY` env var to `api/config.py`
+- [x] Add `GOOGLE_PLACES_API_KEY` env var to `backend/api/config.py`
 - [x] `utils/google_places.py` — Nominatim geocoding (free) + Google Places photo URL helper
 - [ ] Photo enrichment on stop cards (Phase 7)
 
@@ -174,7 +174,7 @@ Goal: transform the itinerary from a data dump into an experience that builds tr
 
 ---
 
-**A. Trust & Content Quality (Backend — `api/routes/itinerary_agent.py`)**
+**A. Trust & Content Quality (Backend — `backend/api/routes/itinerary_agent.py`)**
 - [x] Must-see highlights array — 2–3 iconic spots the model always includes regardless of interests (`highlights: [{name, why_cant_skip, emoji}]`)
 - [x] Crowd level per stop — `crowd_level: "low" | "medium" | "high"` based on day/time in schedule
 - [x] Best time to visit per stop — `best_time` string (e.g. "Before 9 AM to beat crowds")
@@ -186,7 +186,7 @@ Goal: transform the itinerary from a data dump into an experience that builds tr
 - [ ] Real opening hours via Google Places API — replace model-estimated hours with live data
 - [ ] Crowd data via time-of-week heuristics — factor day-of-week + hour into crowd_level per stop
 
-**B. Results UI Redesign (Mobile — `mobile/app/(tabs)/plan.js`)**
+**B. Results UI Redesign (Mobile — `frontend/app/(tabs)/plan.js`)**
 
 *Phase 1 — The Reveal (cinematic first impression):*
 - [x] Full-screen animated reveal card — destination name, trip tagline, dates, stats row (nights/places/meals), "Explore your trip" CTA

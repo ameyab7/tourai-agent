@@ -1,0 +1,326 @@
+[
+  {
+    "time": "02:58:09",
+    "level": "INFO",
+    "logger": "tourai.pipeline",
+    "message": "Starting itinerary pipeline for 'Dallas, Dallas County, Texas, United States'",
+    "extra": {
+      "req_id": "c9635b8e",
+      "plan_id": "c9635b8ee0ec4d998f38d64d822f8413"
+    }
+  },
+  {
+    "time": "02:58:09",
+    "level": "INFO",
+    "logger": "tourai.api",
+    "message": "POST /v2/itinerary/stream → 200 in 1553ms (from 192.168.1.15)"
+  },
+  {
+    "time": "02:58:09",
+    "level": "INFO",
+    "logger": "tourai.api",
+    "message": "Multi-city query detected: 'Dallas, Dallas County, Texas, United States' -> ['dallas', 'dallas county', 'texas', 'united states']"
+  },
+  {
+    "time": "02:58:10",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: GET https://api.geoapify.com/v1/geocode/search?text=Dallas%2C+Dallas+County%2C+Texas%2C+United+States&apiKey=b027461a7b574aadbee660527afb7a02&limit=5&format=json \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "02:58:10",
+    "level": "WARNING",
+    "logger": "tourai.prefetch",
+    "message": "Geocode warning for 'Dallas, Dallas County, Texas, United States':  Multi-city trip detected. Using first location only."
+  },
+  {
+    "time": "02:58:10",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: GET https://api.geoapify.com/v2/places?categories=accommodation.hotel%2Caccommodation.guest_house%2Caccommodation.hostel%2Caccommodation.motel&filter=circle%3A-96.7968559%2C32.7762719%2C10000&limit=10&apiKey=b027461a7b574aadbee660527afb7a02 \"HTTP/2 200 OK\""
+  },
+  {
+    "time": "02:58:10",
+    "level": "INFO",
+    "logger": "tourai.prefetch",
+    "message": "Hotels: 5 found within 10000m for 'Dallas'"
+  },
+  {
+    "time": "02:58:10",
+    "level": "INFO",
+    "logger": "tourai.prefetch",
+    "message": "Picked hotel: Residence Inn at (32.76591738114604, -96.8761496444611)"
+  },
+  {
+    "time": "02:58:11",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: GET https://api.open-meteo.com/v1/forecast?latitude=32.7762719&longitude=-96.7968559&daily=temperature_2m_max%2Ctemperature_2m_min%2Cweather_code%2Csunrise%2Csunset&timezone=auto&forecast_days=16 \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "02:58:12",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: GET https://api.geoapify.com/v2/places?categories=tourism.sights%2Ctourism.sights.castle%2Ctourism.sights.ruines%2Ctourism.sights.fort%2Ctourism.sights.memorial%2Ctourism.sights.tower%2Ctourism.attraction%2Ctourism.attraction.viewpoint%2Centertainment.museum%2Centertainment.culture.gallery%2Centertainment.culture.theatre%2Centertainment.culture.arts_centre%2Centertainment.cinema%2Centertainment.theme_park%2Centertainment.aquarium%2Centertainment.zoo%2Cleisure.park%2Cleisure.park.nature_reserve%2Cnational_park%2Cnatural.mountain.peak%2Cbeach%2Ccatering.restaurant%2Ccatering.cafe%2Ccatering.bar%2Ccatering.pub%2Csport.stadium%2Cproduction.winery%2Cproduction.brewery&filter=circle%3A-96.7968559%2C32.7762719%2C30000&limit=100&apiKey=b027461a7b574aadbee660527afb7a02 \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "02:58:12",
+    "level": "INFO",
+    "logger": "utils.geoapify_places",
+    "message": "Fetched 32 POIs from Geoapify at (32.7762719, -96.7968559)"
+  },
+  {
+    "time": "02:58:12",
+    "level": "INFO",
+    "logger": "tourai.prefetch",
+    "message": "POI diagnostic: 'Dallas' outcome=no_refetch_needed final=13",
+    "extra": {
+      "diagnostic": {
+        "initial_count": 32,
+        "initial_radius": 30000,
+        "did_refetch": false,
+        "refetch_count": 0,
+        "refetch_radius": 0,
+        "final_count": 13,
+        "refetch_outcome": "no_refetch_needed"
+      }
+    }
+  },
+  {
+    "time": "02:58:12",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: GET https://api.geoapify.com/v2/places?categories=catering.restaurant%2Ccatering.cafe%2Ccatering.bar%2Ccatering.pub&filter=circle%3A-96.8761496444611%2C32.76591738114604%2C12000&limit=30&apiKey=b027461a7b574aadbee660527afb7a02 \"HTTP/2 200 OK\""
+  },
+  {
+    "time": "02:58:13",
+    "level": "INFO",
+    "logger": "tourai.prefetch",
+    "message": "Restaurants: 30 found within 12000m for 'Dallas'"
+  },
+  {
+    "time": "02:58:13",
+    "level": "INFO",
+    "logger": "tourai.prefetch",
+    "message": "Prefetch complete for 'Dallas, Dallas County, Texas, United States' — 13 attractions, 20 restaurants around hotel, 5 hotels, 5 days of weather",
+    "extra": {
+      "fetch_errors": {},
+      "matrix_points": 38,
+      "hotel_center": [
+        32.76591738114604,
+        -96.8761496444611
+      ]
+    }
+  },
+  {
+    "time": "02:58:13",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "02:58:13",
+    "level": "INFO",
+    "logger": "tourai.scorer",
+    "message": "Scored 13/13 POIs"
+  },
+  {
+    "time": "02:58:13",
+    "level": "INFO",
+    "logger": "tourai.solver",
+    "message": "Skeleton built — 13 POIs across 5 days, hotel: Residence Inn, drive tolerance: 120min",
+    "extra": {
+      "poi_count": 13,
+      "cluster_sizes": [
+        2,
+        2,
+        2,
+        3,
+        4
+      ],
+      "drive_tol_min": 120,
+      "hotel_picked": "Residence Inn"
+    }
+  },
+  {
+    "time": "02:58:13",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 429 Too Many Requests\""
+  },
+  {
+    "time": "02:58:13",
+    "level": "INFO",
+    "logger": "groq._base_client",
+    "message": "Retrying request to /openai/v1/chat/completions in 3.000000 seconds"
+  },
+  {
+    "time": "02:58:13",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 429 Too Many Requests\""
+  },
+  {
+    "time": "02:58:13",
+    "level": "INFO",
+    "logger": "groq._base_client",
+    "message": "Retrying request to /openai/v1/chat/completions in 4.000000 seconds"
+  },
+  {
+    "time": "02:58:15",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "02:58:15",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "02:58:15",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "02:58:15",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "02:58:17",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 429 Too Many Requests\""
+  },
+  {
+    "time": "02:58:17",
+    "level": "INFO",
+    "logger": "groq._base_client",
+    "message": "Retrying request to /openai/v1/chat/completions in 21.000000 seconds"
+  },
+  {
+    "time": "02:58:18",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 429 Too Many Requests\""
+  },
+  {
+    "time": "02:58:18",
+    "level": "INFO",
+    "logger": "groq._base_client",
+    "message": "Retrying request to /openai/v1/chat/completions in 11.000000 seconds"
+  },
+  {
+    "time": "02:58:31",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "02:58:38",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 429 Too Many Requests\""
+  },
+  {
+    "time": "02:58:38",
+    "level": "WARNING",
+    "logger": "tourai.narration",
+    "message": "Narration API call failed for 'day_2' — Error code: 429 - {'error': {'message': 'Rate limit reached for model `llama-3.3-70b-versatile` in organization `org_01kp4yjc0eemtb5hmsjrsaqe7b` service tier `on_demand` on tokens per minute (TPM): Limit 12000, Used 10029, Requested 4412. Please try again in 12.205s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing', 'type': 'tokens', 'code': 'rate_limit_exceeded'}}"
+  },
+  {
+    "time": "02:58:38",
+    "level": "INFO",
+    "logger": "tourai.validation",
+    "message": "Re-narrating 1 failed days before final assembly: [2]"
+  },
+  {
+    "time": "02:58:38",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 429 Too Many Requests\""
+  },
+  {
+    "time": "02:58:38",
+    "level": "INFO",
+    "logger": "groq._base_client",
+    "message": "Retrying request to /openai/v1/chat/completions in 2.000000 seconds"
+  },
+  {
+    "time": "02:58:40",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 429 Too Many Requests\""
+  },
+  {
+    "time": "02:58:40",
+    "level": "INFO",
+    "logger": "groq._base_client",
+    "message": "Retrying request to /openai/v1/chat/completions in 10.000000 seconds"
+  },
+  {
+    "time": "02:58:52",
+    "level": "INFO",
+    "logger": "httpx",
+    "message": "HTTP Request: POST https://api.groq.com/openai/v1/chat/completions \"HTTP/1.1 200 OK\""
+  },
+  {
+    "time": "02:58:52",
+    "level": "INFO",
+    "logger": "tourai.validation",
+    "message": "Swapped duplicate restaurant 'Pecan Lodge' with 'Texas de Brazil' (reason: appeared too many times in the trip)"
+  },
+  {
+    "time": "02:58:52",
+    "level": "INFO",
+    "logger": "tourai.validation",
+    "message": "Swapped duplicate restaurant \"Mama's Daughters\" with 'Texas de Brazil' (reason: appeared too many times in the trip)"
+  },
+  {
+    "time": "02:58:52",
+    "level": "INFO",
+    "logger": "tourai.validation",
+    "message": "Swapped duplicate restaurant 'Campuzano Mexican Food' with \"Chip's Old Fashioned Hamburger\" (reason: appeared too many times in the trip)"
+  },
+  {
+    "time": "02:58:52",
+    "level": "INFO",
+    "logger": "tourai.validation",
+    "message": "Swapped duplicate restaurant 'Pecan Lodge' with \"Mason's Chicken and Seafood\" (reason: appeared too many times in the trip)"
+  },
+  {
+    "time": "02:58:52",
+    "level": "INFO",
+    "logger": "tourai.validation",
+    "message": "Swapped duplicate restaurant \"Mama's Daughters\" with \"Chip's Old Fashioned Hamburger\" (reason: appeared too many times in the trip)"
+  },
+  {
+    "time": "02:58:52",
+    "level": "INFO",
+    "logger": "tourai.validation",
+    "message": "Swapped duplicate restaurant 'Pecan Lodge' with \"Mason's Chicken and Seafood\" (reason: appeared too many times in the trip)"
+  },
+  {
+    "time": "02:58:52",
+    "level": "INFO",
+    "logger": "tourai.pipeline",
+    "message": "Pipeline complete for 'Dallas, Dallas County, Texas, United States' in 42.65s",
+    "extra": {
+      "req_id": "c9635b8e",
+      "plan_id": "c9635b8ee0ec4d998f38d64d822f8413"
+    }
+  },
+  {
+    "time": "02:58:52",
+    "level": "INFO",
+    "logger": "tourai.storage",
+    "message": "plan_saved",
+    "extra": {
+      "plan_id": "c9635b8ee0ec4d998f38d64d822f8413"
+    }
+  }
+]
